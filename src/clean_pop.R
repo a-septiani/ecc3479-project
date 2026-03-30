@@ -21,8 +21,10 @@ all_pop$date <- seq(from = as.Date("2009-12-01"), by = "3 months", length.out = 
   format("%Y-%m")
 
 all_pop <- all_pop %>%
-  separate(date, into = c("year", "month"), sep = "-") %>%
-  rename(month = 2, NSW = 3, VIC = 4, QLD = 5, SA = 6, TAS = 7)
+  separate(date, into = c("year", "month"), sep = "-")
+
+all_pop <- all_pop %>%
+  rename(NSW = 3, VIC = 4, QLD = 5, SA = 6, TAS = 7)
 
 # pivot the data to long format for easier plotting
 all_pop <- all_pop %>%
