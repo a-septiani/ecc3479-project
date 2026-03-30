@@ -1,11 +1,3 @@
-#draft question
-Did the Australian carbon pricing policy reduce electricity demand more in Victoria than in New South Wales?
-#expected data
-AEMO aggreggate demand 2010-2014, Australian Bureau of Meteorology temperature data, population, economic activity
-
-#15/3/24 changes on question because of the feedback
-Did electricity demand respond more strongly to the carbon pricing policy in states with more carbon-intensive electricity generation?
-
 # Carbon Pricing and Electricity Demand in Australian States
 This project examines whether electricity demand responded more strongly to the Australian carbon pricing policy (2012–2014) in states with more carbon-intensive electricity generation.
 
