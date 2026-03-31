@@ -1,5 +1,4 @@
 # set up the environment
-install.packages(c("tidyverse", "lubridate", "readr", "languageserver", "janitor", "readxl"))
 library(tidyverse)
 library(lubridate)
 library(readr)

@@ -8,7 +8,9 @@ library(janitor)
 all_pop <- read_excel("data/raw/abs_population/OZ_pop.xlsx", sheet = "Data1")
 print (all_pop, n = 100)
 
-# only keep data from 2009-12 to 2014-12, and NEM states columns
+# we need to change the format for years because it read as random numbers.
+# only keep data from 2009-12 to 2014-12, and NEM states columns.
+# must check the original data outside of R to confirm the correct rows and columns to keep.
 all_pop <- all_pop[-c(1:123,145:187), -c(2:19, 24, 26:28)]
 print (all_pop, n = 100)
 head(all_pop)
@@ -23,6 +25,7 @@ all_pop$date <- seq(from = as.Date("2009-12-01"), by = "3 months", length.out = 
 all_pop <- all_pop %>%
   separate(date, into = c("year", "month"), sep = "-")
 
+# rename the region columns to match the other datasets
 all_pop <- all_pop %>%
   rename(NSW = 3, VIC = 4, QLD = 5, SA = 6, TAS = 7)
 
@@ -50,4 +53,6 @@ sep = "-")), y = population, color = region)) +
   theme_minimal()
 
 print(r)
+
+#save the plot as a PNG file
 ggsave ("outputs/population_by_region.png", plot = r, width = 12, height = 8)

@@ -1,5 +1,4 @@
 # set up the environment
-install.packages(c("tidyverse", "lubridate", "readr", "languageserver", "janitor", "readxl"))
 library(tidyverse)
 library(lubridate)
 library(readr)
@@ -15,12 +14,8 @@ length(all_dmd_prc_files)
 head(all_dmd_prc_files)
 
 # read and combine all the files into one data frame
-one_file <- read_csv(all_dmd_prc_files[1])
-glimpse(one_file)
 all_data <- map_dfr(all_dmd_prc_files, read_csv)
 glimpse(all_data)
-head(all_data)
-tail(all_data)
 anyNA(all_data)
 
 # create month and year columns
@@ -44,7 +39,6 @@ monthly_demand_price <- all_data |>
   ) |>
   ungroup()
 glimpse(monthly_demand_price)
-head(monthly_demand_price)
 
 # save the cleaned data to a new CSV file
 write_csv(monthly_demand_price, "data/clean/monthly_demand_price.csv")
@@ -64,11 +58,13 @@ p <- ggplot(monthly_demand_price, aes(x = as.Date(paste(year, month, "01", sep =
   ) +
   labs(
     title = "Average Demand and Price Over Time by Region",
-    x = "Date",
+    x = "July 2012",
     color = "Region",
     linetype = "Metric"
   ) +
   theme_minimal()
 
 print(p)
+
+# save the plot to a file
 ggsave("outputs/demand_price_by_region.png", plot = p, width = 12, height = 8)
