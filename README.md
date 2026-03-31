@@ -20,7 +20,7 @@ The analysis uses state-level panel data combining electricity demand, electrici
   - merge_data.R
   - econometrics_analysis.R 
 
-- outputs/
+- outputs/  
   Contains graphs and plots from EDA process. The current plots are:
   - demand_price_by_region.png: The time series trend of demand and price of electricity before and after carbon pricing
   - population_by_region.png: The time series trend of population
@@ -70,7 +70,7 @@ install.packages(c("tidyverse", "lubridate", "janitor", "readxl", "readr", "lang
 
 1. Clone the repository:
 
-git clone [https://github.com/a-septiani/ecc3479-project]
+    git clone [https://github.com/a-septiani/ecc3479-project]
 
 2. Place raw data files into the appropriate folders:
 
@@ -91,7 +91,7 @@ git clone [https://github.com/a-septiani/ecc3479-project]
        Result: data/clean/energy_mix.csv
   5. Rscript src/merge_data.R  
        Result: data/clean/merged_data.csv
-  6. Rscript econometrics_analysis.R (outside Data + GitHub assidgment)
+  6. Rscript econometrics_analysis.R (outside Data + GitHub assignment)
 
 ## Manual Steps
 
