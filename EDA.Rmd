@@ -1,0 +1,556 @@
+---
+title: "Exploratory Data Analysis: Carbon Pricing and Electricity Demand"
+author: "Adinda Septiani - 33917949"
+output: html_document
+---
+
+## 1. Introduction
+
+This exploratory data analysis examines whether electricity demand responded more strongly to the Australian carbon pricing policy in states with more carbon-intensive electricity generation. The underlying hypothesis is that carbon pricing increases the cost of carbon-intensive electricity production, which may be reflected in higher electricity prices and, in turn, changes in demand. The dataset is a monthly state-level panel covering National Electricity Market states from 2010 to 2014.
+
+The purpose of this EDA is to:
+
+- describe the main characteristics of the variables,
+- check whether the cleaned data looks reasonable,
+- explore first-order relationships between key variables, and
+- identify patterns that may inform later modelling choices.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(janitor)
+library(lubridate)
+```
+
+## 2. Load Data
+
+```{r load-data}
+candidate_paths <- (
+  "data/clean/merged_data.csv"
+)
+
+data_path <- candidate_paths[file.exists(candidate_paths)][1]
+
+# existing code
+if (is.na(data_path)) {
+  stop("No dataset found. Expected data/clean/merged_data.csv")
+}
+
+analysis_data <- read_csv(data_path) |>
+  clean_names()
+
+# Create post-policy indicator if missing:
+# 1 for Jul 2012 onward, 0 otherwise
+if (!"post_jul2012" %in% names(analysis_data)) {
+  analysis_data <- analysis_data |>
+    mutate(
+      post_jul2012 = if_else(year > 2012 | (year == 2012 & month >= 7), 1L, 0L)
+    )
+}
+
+required_cols <- c(
+  "region", "year", "month", "avg_demand", "avg_price",
+  "avg_temp", "population", "coal_share", "post_jul2012"
+)
+
+missing_cols <- setdiff(required_cols, names(analysis_data))
+if (length(missing_cols) > 0) {
+  stop(paste("Missing required columns:", paste(missing_cols, collapse = ", ")))
+}
+
+glimpse(analysis_data)
+summary(analysis_data)
+```
+
+The dataset contains 100 observations across five regions, with quarterly observations from 2010 to 2014. The panel structure is balanced, as each region is observed consistently across all time periods. The dataset contains 14 variables, including one categorical variable (region) and several continuous numeric variables such as electricity demand, price, temperature, population, and coal share. In addition, a binary indicator variable (post_jul2012) is stored as numeric, this variable represents a discrete categorical distinction between pre- and post-policy periods.
+
+Key variables such as electricity demand, price, temperature, and population exhibit reasonable variation. Electricity demand ranges from approximately 1,025 to 9,543 MWh, while prices vary between around $16 and $109 per MWh. These ranges suggest sufficient variation for meaningful analysis.
+
+Population varies substantially across regions, reflecting differences in the size and economic scale of each state. This variation is important, as larger populations are likely associated with higher electricity demand.
+
+Coal share ranges from close to 0 up to around 0.9, indicating significant differences in the carbon intensity of electricity generation across regions. Some states rely heavily on coal, while others have a much lower share, providing useful variation for the research question.
+
+The post-policy indicator is a binary variable ranging from 0 to 1, where 1 represents periods after the introduction of carbon pricing in July 2012. This variable allows comparison between pre- and post-policy periods.
+
+Overall, the dataset appears internally consistent and suitable for further exploratory and econometric analysis.
+
+## 3. Basic Description of the Data
+
+### 3.1 Number of observations and panel structure
+
+```{r panel-structure}
+analysis_data |> summarise(
+  n_observations = n(),
+  n_states = n_distinct(region),
+  min_year = min(year, na.rm = TRUE),
+  max_year = max(year, na.rm = TRUE)
+)
+
+analysis_data |> count(region)
+
+analysis_data |> 
+  distinct(year, month) |> 
+  arrange(year, month)
+```
+
+The dataset contains 100 observations across 5 regions over the period 2010–2014. Due to data availability constraints, particularly for population, observations are recorded at a quarterly frequency rather than monthly. As a result, the dataset only includes months corresponding to the quarters (March, June, September, December), rather than a full monthly sequence. Each region contributes 20 observations, corresponding to quarterly data. 
+
+This indicates that the panel is balanced, meaning that each cross-sectional unit (region) is observed the same number of times across the time dimension. 
+
+### 3.2 Missing values
+
+```{r missing-values}
+colSums(is.na(analysis_data))
+```
+
+It is noteworthy that, despite restricting the dataset to quarterly observations due to data availability (e.g., population), the final sample still retains 100 observations. This suggests that the merging and data cleaning process was successful and did not introduce any missing values. Importantly, the remaining sample size is sufficiently large to support meaningful empirical analysis.
+
+### 3.3 Variable summary statistics
+
+```{r summary-stats}
+analysis_data |>
+  select(avg_demand, avg_price, avg_temp, population, coal_share) |>
+  summary()
+```
+
+This section reports summary statistics for the key variables used in the econometric analysis, namely average demand, price, temperature, population, and coal share. These variables exhibit variation across both regions and time, which is essential for identifying the relationships of interest.
+
+Average electricity demand ranges from approximately 1,025 to 9,543, indicating substantial variation across states and time. Electricity prices also show considerable dispersion, ranging from around 16.5 to over 100, suggesting periods of price spikes. Temperature varies within a narrower band, while population differences reflect substantial dissimilarity in state size.
+
+### 3.4   Variable distributions
+
+#### 3.4.1 Electricity demand
+```{r demand-histogram}
+ggplot(analysis_data, aes(x = avg_demand)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Average Monthly Electricity Demand",
+    x = "Average Monthly Demand",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+The distribution of electricity demand appears multi-modal, suggesting the presence of distinct clusters. This likely reflects structural differences across states, where larger and more industrialised states exhibit higher demand levels, while smaller states cluster at lower levels. This indicates substantial cross-sectional heterogeneity in electricity consumption.
+
+#### 3.4.2 Electricity Price
+```{r price-histogram}
+ggplot(analysis_data, aes(x = avg_price)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Average Monthly Electricity Price",
+    x = "Average Monthly Price",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+Electricity prices are right-skewed, with most observations concentrated at lower levels and a few high-price outliers, suggesting occasional price spikes in the market.
+
+#### 3.4.3 Temperature
+```{r temp-histogram}
+ggplot(analysis_data, aes(x = avg_temp)) +
+  geom_histogram(bins = 20, fill = "tomato", color = "white") +
+  labs(
+    title = "Distribution of Average Monthly Temperature",
+    x = "Average Monthly Temperature",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+Temperature is relatively symmetrically distributed, with moderate variation and no extreme outliers, consistent with typical seasonal patterns.
+
+#### 3.4.4 Population
+```{r population-histogram}
+ggplot(analysis_data, aes(x = population)) +
+  geom_histogram(bins = 20, fill = "seagreen", color = "white") +
+  labs(
+    title = "Distribution of Population",
+    x = "Population",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+Population exhibits clear clustering, with observations grouped into distinct ranges. This pattern reflects significant differences in state size, where some states have substantially larger populations than others. Such variation is important, as population is a key determinant of electricity demand and may drive differences in consumption across regions.
+
+#### 3.4.5 Coal share
+``` {r coal-share-histogram}
+ggplot(analysis_data, aes(x = coal_share)) +
+  geom_histogram(bins = 15, fill = "purple", color = "white") +
+  labs(
+    title = "Distribution of Coal Share",
+    x = "Coal Share",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+The distribution of coal share shows multiple modes, indicating that states can be grouped based on their reliance on coal in electricity generation. Some states exhibit very low coal share, while others rely heavily on coal, reflecting structural differences in energy mix. This heterogeneity is central to the analysis, as it captures variation in carbon intensity across regions.
+
+## 4. Data Cleaning Checks
+
+The raw data required several cleaning and harmonisation steps to ensure consistency across sources and suitability for panel analysis. High-frequency electricity demand and price data were aggregated into monthly averages to align with the availability of other variables, particularly population. Temperature was constructed as the average of monthly mean maximum and minimum values to provide a consistent measure of climatic conditions.
+
+Observations without population data were removed to ensure consistency across key variables. Although this reduced the sample size, the remaining dataset preserves the quarterly time structure (March, June, September, December), maintaining the seasonal pattern essential for analysing electricity demand. As such, the cleaning process does not distort the underlying temporal variation in the data.
+
+Overall, the cleaned dataset appears reasonable: there are no duplicate state-month observations, key variables exhibit plausible ranges, and the panel structure remains balanced across states and time. These checks suggest that the data cleaning process has not introduced inconsistencies or biases that would compromise subsequent analysis.
+
+### 4.1 Check for duplicate state-month observations
+
+```{r duplicates-check}
+analysis_data |>
+  count(region, year, month) |>
+  filter(n > 1)
+```
+
+The absence of duplicate state-month observations confirms that each unit of analysis is uniquely defined, ensuring consistency in the panel structure.
+
+### 4.2 Check time-invariant coal share by state
+
+```{r coal-invariant-check}
+analysis_data |>
+  group_by(region) |>
+  summarise(
+    min_coal = min(coal_share, na.rm = TRUE),
+    max_coal = max(coal_share, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+This section examines the variation of coal share within each state over time. The results indicate that coal share is not strictly time-invariant, as there is observable variation within states, although the changes are relatively moderate compared to cross-state differences.
+
+## 5. Distribution and Trends of Key Variables
+
+### 5.1 Electricity demand
+
+```{r demand-trend}
+ggplot(
+  analysis_data |>
+    mutate(
+      year_month = make_date(year, month, 1),
+      policy_period = if_else(year_month < as.Date("2012-07-01"), "Pre", "Post")
+    ),
+  aes(x = year_month, y = avg_demand, color = region, group = region)
+) +
+  geom_line(alpha = 0.7) +
+  geom_smooth(
+    aes(group = interaction(region, policy_period), linetype = policy_period),
+    method = "lm",
+    se = FALSE,
+    linewidth = 1
+  ) +
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red",) +
+  annotate ( "text",
+    x = as.Date("2012-07-01"),
+    y = max(analysis_data$avg_demand, na.rm = TRUE),
+    label = "carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Figure 5.1.1. Electricity Demand by Region with Pre/Post Policy Trends",
+    x = "Year",
+    y = "Average Monthly Demand",
+    color = "Region",
+    linetype = "Policy Period"
+  ) +
+  theme_minimal()
+```
+
+```{r population-plot}
+# 1-year trend = yearly average per region (plotted as dashed line)
+demand_monthly <- analysis_data |>
+  mutate(year_month = make_date(year, month, 1))
+
+demand_yearly <- demand_monthly |>
+  group_by(region, year) |>
+  summarise(avg_demand_year = mean(avg_demand, na.rm = TRUE), .groups = "drop") |>
+  mutate(year_month = make_date(year, 7, 1))  # place yearly point mid-year
+
+ggplot(demand_monthly, aes(x = year_month, y = avg_demand, color = region, group = region)) +
+  geom_line(alpha = 0.7) +  # original trend
+  geom_line(
+    data = demand_yearly,
+    aes(x = year_month, y = avg_demand_year, color = region, group = region),
+    linetype = "dashed",
+    linewidth = 1.1
+  ) +  # 1-year trend
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(demand_monthly$avg_demand, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Figure 5.1.2. Electricity Demand by Region Over Time",
+    subtitle = "Solid = original series, Dashed = 1-year trend",
+    x = "Year",
+    y = "Average Monthly Demand",
+    color = "Region"
+  ) +
+  theme_minimal()
+```
+
+Figure 1 presents electricity demand by region with fitted pre- and post-policy trends. While there is a visible decline in demand following the July 2012 policy introduction, the change appears relatively modest and varies across states. This suggests that any immediate policy effect may be limited.
+
+To complement this, Figure 2 shows a smoothed yearly trend in demand. The figure reveals a broader downward trajectory over time that predates the policy. This indicates that the observed decline in demand may not be solely attributable to carbon pricing, but could also reflect structural changes such as improvements in energy efficiency or shifts toward alternative energy sources.
+
+Taken together, these patterns highlight the importance of distinguishing between short-run policy effects and longer-term underlying trends in the empirical analysis.
+
+### 5.2 Electricity price
+
+```{r price-plots}
+ggplot(
+  analysis_data |> mutate(year_month = make_date(year, month, 1)),
+  aes(x = year_month, y = avg_price, color = region, group = region)
+) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(analysis_data$avg_price, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Electricity Price by Region Over Time",
+    x = "Year",
+    y = "Average Monthly Price"
+  ) +
+  theme_minimal()
+```
+
+Electricity prices increase noticeably following the policy introduction, particularly in some states. This supports the hypothesis that carbon pricing may affect electricity demand indirectly through price changes.
+
+### 5.3 Temperature
+
+```{r temp-plot}
+ggplot(
+  analysis_data |> mutate(year_month = make_date(year, month, 1)),
+  aes(x = year_month, y = avg_temp, color = region, group = region)
+) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(analysis_data$avg_temp, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Temperature by Region Over Time",
+    x = "Year",
+    y = "Average Monthly Temperature"
+  ) +
+  theme_minimal()
+```
+
+Temperature exhibits a stable and highly consistent seasonal pattern across all years and regions, with regular cyclical fluctuations and no significant structural breaks around the policy period. This suggests that temperature-driven demand variation remains constant over time, supporting its role as a control variable rather than a confounding factor in the analysis.
+
+### 5.4 Population
+
+```{r population-trend}
+ggplot(
+  analysis_data |> mutate(year_month = make_date(year, month, 1)),
+  aes(x = year_month, y = population, color = region, group = region)
+) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(analysis_data$population, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Population Trend by Region",
+    x = "Year",
+    y = "Population"
+  ) +
+  theme_minimal()
+```
+
+Population follows a smooth and steadily increasing trend with minimal short-term fluctuations. This confirms that population primarily captures long-run differences in demand levels rather than short-run variation.
+
+### 5.5 Coal share
+```{r coal-share-plot}
+coal_plot_data <- analysis_data |>
+  group_by(year, region) |>
+  summarise(coal_share = mean(coal_share, na.rm = TRUE), .groups = "drop")
+
+ggplot(coal_plot_data, aes(x = factor(year), y = coal_share, fill = region)) +
+  geom_col(position = position_dodge()) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    title = " Figure 5.5.1. Coal Share by Region and Year",
+    x = "Year",
+    y = "Coal Share"
+  ) +
+  theme_minimal()
+```
+
+```{r coal-share-trend}
+coal_plot_data_date <- coal_plot_data |>
+  mutate(year_date = make_date(year, 7, 1))  # mid-year point for each year
+
+ggplot(coal_plot_data_date, aes(x = year_date, y = coal_share, color = region, group = region)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(coal_plot_data_date$coal_share, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Figure 5.5.2. Coal Share Trend by Region",
+    x = "Year",
+    y = "Coal Share"
+  ) +
+  theme_minimal()
+```
+
+Figure 1 shows the distribution of coal share across regions, highlighting clear differences in reliance on coal-fired generation. NSW and VIC consistently exhibit high coal shares, while SA and especially TAS rely much less on coal. This indicates substantial cross-state variation in carbon intensity, which is important for identifying heterogeneous responses to carbon pricing.
+
+Figure 2 illustrates how coal share evolves over time within each region. Although most states display a gradual downward trend, the changes are relatively smooth rather than abrupt, suggesting that the energy mix adjusts slowly in the short run. SA stands out with the steepest decline, indicating a faster transition away from coal, whereas TAS remains constant at zero throughout the sample period.
+
+Overall, while there is evidence of a gradual shift away from coal, short-run within-state variation remains limited compared to persistent differences across states. This supports the use of coal share as a measure of structural exposure to carbon intensity in the empirical analysis.
+
+## 6. Exploratory Relationships
+
+### 6.1 Demand and price
+
+```{r demand-price}
+ggplot(analysis_data, aes(x = avg_price, y = avg_demand, color = region)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +  # by region
+  geom_smooth(
+    data = analysis_data,
+    aes(x = avg_price, y = avg_demand, linetype = "Average relationship"),
+    inherit.aes = FALSE,
+    method = "lm",
+    se = FALSE,
+    color = "black",
+    linewidth = 1.2
+  ) +  # overall average relationship
+  labs(
+    title = "Electricity Demand and Price",
+    x = "Average Monthly Price",
+    y = "Average Monthly Demand"
+  ) +
+  theme_minimal()
+```
+
+This figure examines the relationship between electricity demand and price across regions. Based on standard demand theory, a negative relationship is expected, where higher prices lead to lower demand.
+
+At the aggregated level, the overall fitted line shows a slightly negative relationship. However, this pattern appears to be driven by differences across regions rather than a consistent within-region response. In particular, states such as South Australia (SA) and Tasmania (TAS), which exhibit relatively stable demand levels across different price ranges, may offset stronger negative relationships observed in other states.
+
+As a result, the pooled trend reflects a compositional effect rather than a clear behavioral response to price. This highlights that the observed relationship is descriptive and should not be interpreted as causal, especially given the simultaneity between price and demand in electricity markets.
+
+### 6.2 Demand and temperature
+
+```{r demand-temperature}
+ggplot(analysis_data, aes(x = avg_temp, y = avg_demand, color = region)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +  # by region
+  geom_smooth(
+    data = analysis_data,
+    aes(x = avg_temp, y = avg_demand, linetype = "Average relationship"),
+    inherit.aes = FALSE,
+    method = "lm",
+    se = FALSE,
+    color = "black",
+    linewidth = 1.2
+  ) +  # overall average relationship
+  labs(
+    title = "Electricity Demand and Temperature",
+    x = "Average Monthly Temperature",
+    y = "Average Monthly Demand"
+  ) +
+  theme_minimal()
+```
+
+This figure explores the relationship between electricity demand and temperature. At the aggregated level, the overall trend suggests a positive relationship, where higher temperatures are associated with higher electricity demand.
+
+However, when examining the relationship within individual regions, a different pattern emerges: most regions display a negative relationship between temperature and demand. This indicates that within a given region, higher temperatures are associated with slightly lower demand.
+
+This reversal between the aggregated and within-region relationships is an example of Simpson’s paradox, where the pooled data suggests one trend while the underlying subgroup relationships point in the opposite direction.
+
+The key driver of this paradox is variation in baseline demand across regions. Warmer regions tend to have higher overall electricity demand, which creates a positive association in the pooled data. However, within each region, temperature fluctuations do not drive demand in the same way.
+
+This highlights the importance of controlling for regional heterogeneity such as through fixed effects, in order to correctly identify the relationship between temperature and electricity demand.
+
+### 6.3 Demand before and after policy
+```{r demand-post}
+ggplot(
+  analysis_data,
+  aes(
+    x = factor(post_jul2012, levels = c(0, 1), labels = c("Before", "After")),
+    y = avg_demand,
+    fill = factor(post_jul2012, levels = c(0, 1), labels = c("Before", "After"))
+  )
+) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(
+    title = "Electricity Demand Before and After Carbon Pricing",
+    x = "Post-July 2012 (1 = After, 0 = Before)",
+    y = "Average Monthly Demand"
+  ) +
+  theme_minimal()
+```
+
+This figure provides a simple comparison of electricity demand before and after the introduction of carbon pricing in July 2012.
+
+While there is a slight decrease in median demand in the post-policy period, the overall distribution remains largely similar, with substantial overlap between the two periods. This suggests that any immediate change in demand following the policy introduction is relatively modest.
+
+However, this comparison does not account for underlying time trends or other confounding factors. As such, it should be interpreted as descriptive rather than causal, reinforcing the need for a more rigorous regression-based analysis.
+
+## 7. Correlation Analysis
+
+```{r correlation}
+corr_data <- analysis_data |>
+  select(avg_demand, avg_price, avg_temp, population, coal_share)
+
+cor(corr_data, use = "complete.obs")
+```
+
+The correlation matrix reveals several important patterns for later modelling. Average demand is highly positively correlated with both population (0.969) and coal share (0.927), while population and coal share are also strongly correlated with each other (0.957). This suggests that much of the variation in demand may reflect structural cross-state differences rather than short-run within-state changes, and it also raises the possibility of multicollinearity if these variables are included together in a regression.
+
+By contrast, average price shows almost no simple correlation with demand (-0.012), indicating that the descriptive relationship between these variables is weak in the pooled data. Temperature has a moderate positive correlation with demand (0.364), which is consistent with the earlier finding that pooled correlations may differ from within-region patterns. Overall, these results reinforce the importance of controlling for regional heterogeneity in the econometric analysis.
+
+Since these are pooled correlations, they partly reflect persistent differences across states and should not be interpreted as within-state causal relationships.
+
+## 8. Implications for Modelling
+
+- Electricity demand varies substantially across states and over time, supporting the use of panel data methods.
+- There is clear seasonality in temperature, suggesting the inclusion of time controls such as month fixed effects.
+- Population and coal share vary significantly across states, indicating their importance as control variables.
+- However, population and coal share are highly correlated in the pooled data, raising potential multicollinearity concerns. Since these correlations are largely driven by cross-state differences, it is important to focus on within-state variation in the regression analysis.
+- The relationship between demand and price appears weak in the descriptive analysis. This may reflect differences in adjustment speeds, where prices respond more quickly to market conditions while demand adjusts more gradually. As a result, short-run price fluctuations may not be matched by immediate changes in quantity demanded, leading to a weaker observed relationship. 
+- Finally, the relationship between temperature and demand differs between pooled and within-state patterns. While the aggregated data suggests a positive relationship, within individual states the relationship appears weaker or negative. This is consistent with Simpson’s paradox and highlights the importance of controlling for regional fixed effects.
+
+## 9. Conclusion
+
+This exploratory data analysis shows that electricity demand varies meaningfully across both states and time, while population and coal share primarily capture structural differences across regions. The data also reveals clear seasonality in temperature and demand, supporting the inclusion of time controls in later modelling. In addition, the descriptive relationships suggest that pooled patterns may be misleading: in particular, the temperature–demand relationship is consistent with Simpson’s paradox, where cross-state differences obscure the underlying within-state pattern. The weak relationship between price and demand may also reflect the fact that prices adjust more quickly than quantities in the short run, rather than a strong immediate demand response. These results motivate a panel-data approach that focuses on within-state variation while using differences in coal intensity to study heterogeneous effects of carbon pricing.
+

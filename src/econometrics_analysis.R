@@ -67,3 +67,7 @@ cat("\nDifference-in-Differences model (high coal share vs low coal share)\n")
 print(did_model)
 print(summary(did_model))
 
+
+l <-lm(avg_demand ~ post_jul2012 * coal_share + avg_temp + population + factor(region), data = analysis_data)
+
+summary(l)
