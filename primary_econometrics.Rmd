@@ -1,0 +1,382 @@
+---
+title: "Econometric Analysis: Carbon Pricing and Electricity Demand"
+author: "Adinda Septiani - 33917949"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(fixest)
+library(modelsummary)
+library(kableExtra)
+library(lubridate)  
+```
+
+---
+
+# 1. Declaration of Analytical Ambition
+
+This analysis is **descriptive**. It estimates the conditional association between
+coal intensity and electricity demand following the introduction of Australian carbon
+pricing in July 2012, using a balanced state-level panel. No claim is made that the
+estimated relationships are causal. Because all five National Electricity Market (NEM)
+states were subject to the same policy simultaneously, there is no untreated control
+group, and a standard difference-in-differences identification strategy is not available.
+The coefficients reported below should be interpreted as conditional correlations for what
+is associated with demand, after absorbing fixed differences across states and common
+time trends and not as treatment effects.
+
+---
+
+# 2. Load Data
+
+```{r load-data}
+candidate_paths <- c("data/clean/merged_data.csv")
+data_path <- candidate_paths[file.exists(candidate_paths)][1]
+
+if (is.na(data_path)) {
+  stop("No dataset found. Expected data/clean/merged_data.csv")
+}
+
+analysis_data <- read_csv(data_path) |>
+  clean_names() |>
+  mutate(
+    post_jul2012 = if_else(year > 2012 | (year == 2012 & month >= 7), 1L, 0L),
+    log_demand   = log(avg_demand),
+    log_price    = log(avg_price),
+    log_pop      = log(population),
+    avg_temp_sq = avg_temp^2, # Quadratic term for temperature to capture non-linear effects
+    # Quarter fixed effect label for time FE
+    time_id      = paste(year, sprintf("%02d", month), sep = "-"),
+    # Interaction: post-policy × coal share (continuous treatment intensity)
+    post_x_coal  = post_jul2012 * coal_share
+  )
+
+glimpse(analysis_data)
+```
+
+The cleaned dataset contains `r nrow(analysis_data)` observations across
+`r n_distinct(analysis_data$region)` states and
+`r n_distinct(analysis_data$time_id)` quarterly time periods (2010–2014).
+The panel is balanced: each state contributes exactly 20 observations.
+
+---
+
+# 3. Econometric Specification
+
+## 3.1 Functional Form and Regressors
+
+The outcome variable is the log of average quarterly electricity demand, 
+$\log(\text{demand}_{it})$. In the EDA, the distribution of avg_demand is multi-modal and 
+right-skewed, with observations clustering at very different levels across states 
+(Section 3.4.1). NSW sit at 8,000–9,500 MWh, while TAS and SA cluster around 1,000–1,500 MWh. 
+That's nearly a 10x difference in raw units. In a linear model, a one-unit change in a 
+regressor would imply the same absolute change in MWh regardless of whether you're in NSW or 
+TAS. That's economically implausible. For example, a $1 price increase means something very 
+different to a large state vs. a small one. Taking logs means coefficients become 
+proportional/percentage effects, which makes much more sense when states vary so dramatically 
+in baseline size. 
+
+The main equation estimated is:
+
+$$
+\log(\text{demand}_{it}) = \alpha_i + \lambda_t + \beta_1 \, \text{post}_{t}
+  + \beta_2 \, (\text{post}_{t} \times \text{coalshare}_{i})
+  + \gamma_2 \, \text{temp}_{it}
+  + \gamma_2 \, \text{temp}_{it}^2
+  + \gamma_3 \log(\text{pop}_{it})
+  + \varepsilon_{it}
+$$
+
+where:
+
+- $i$ indexes state, $t$ indexes quarter-year.
+- $\alpha_i$ are **state fixed effects**, absorbing all time-invariant state-level
+  differences (e.g., industrial structure, climate zone).
+- $\lambda_t$ are **time fixed effects**, absorbing common shocks in each period
+  (e.g., national business cycle, energy market conditions).
+- $\text{post}_{t}$ is a binary indicator equal to 1 from July 2012 onward.
+- $\text{post}_{t} \times \text{coalshare}_{i}$ is the key variable of interest.
+  It captures whether the post-policy change in demand was systematically larger
+  in states with a higher share of coal in electricity generation.
+- $\text{temp}_{it}$, $\text{temp}_{it}^2$, and $\log(\text{pop}_{it})$ are
+  demand-side controls for seasonal temperature and state size.
+
+### Justification of regressors:
+
+- *Coal share* varies primarily across states (with modest within-state time variation),
+  making it a proxy for carbon intensity exposure. It bounded between 0 and 1, states like 
+  NSW and VIC have coal shares above 0.80 while Tasmania is at zero. Keeping it in its 
+  natural 0–1 scale makes the interaction coefficient directly interpretable.
+- *Temperature* is included because the EDA showed clear seasonality in demand. Without
+  it, the time fixed effects at the quarter level would need to fully absorb seasonal
+  variation. It is meaningful in linear scales, a one-degree change has a consistent 
+  real-world interpretation. Temperature is included as a quadratic ($\text{temp}_{it}$, 
+  $\text{temp}_{it}^2$) because Figure 6.2 of the EDA shows a U-shaped within-state 
+  relationship between temperature and demand, consistent with dual heating and cooling 
+  demand. A linear term would be misspecified.
+- *Population* controls for scale differences across states. Similar with *Demand*, it is 
+  log-transformed because its distribution is clustering and has the large scale differences 
+  across states. It also has high correlation with demand (Section 7 EDA), making Log-Log
+  more natural for explaining the relationship.
+- *Price* is excluded as a demand-side control because it likely acts as a mediator between 
+  carbon pricing and demand. Carbon pricing likely raised electricity prices, which then 
+  reduced demand, meaning controlling for price partially absorbs the association of interest.
+  Endogeneity concerns around price are also more severe, as price is determined 
+  simultaneously with demand in the market. Including it would therefore complicate the i
+  nterpretation of the coefficients and potentially bias the estimates of the association 
+  between coal share and demand.
+
+## 3.2 Sample
+
+Five NEM states (NSW, QLD, SA, TAS, VIC), quarterly observations from Q1 2010 to Q4 2014,
+giving N = 100 observations. Western Australia and Northern Territory are excluded because 
+they are not part of the NEM. The five NEM states are retained because they share the same 
+30-minute dispatch and settlement system, making their demand and price data directly 
+comparable. This also ensures the panel remains balanced. Meanwhile, the time window is 
+chosen symmetrically around the carbon pricing period. Australia's carbon price was 
+introduced in July 2012 and repealed in July 2014 by the Abbott Coalition government, which 
+argued it imposed an economic burden. This repeal creates a natural upper bound for the 
+sample. The pre-policy window is set to match,starting from Q1 2010 gives approximately 2.5 
+years before the policy (10 quarters) and 2.5 years under it (10 quarters), providing a 
+symmetric comparison that supports visual inspection of pre-policy trends.
+
+## 3.3 Error Structure
+
+Standard errors are clustered at the **state level** to allow for arbitrary serial
+correlation within states over time. The error structure must account for the fact that 
+observations within the same state are not independent across time. The standard assumption 
+of independent errors across all observations is potentially violated as the shocks that 
+happen within states is likely to persist in consecutive quarter. Clustering allows the 
+variance-covariance matrix to be fully unrestricted within each state across all time periods, 
+giving valid inference under arbitrary serial correlation and heteroskedasticity within 
+clusters. One limitation of this approach is that cluster-robust inference is justified as 
+the number of clusters grows large. With only five states, this asymptotic approximation is 
+poor, meaning significance results should be interpreted with caution.
+
+---
+
+# 4. Results
+
+```{r regressions}
+# Specification 1: Pooled OLS, no fixed effects
+m1 <- feols(
+  log_demand ~ post_jul2012 + post_x_coal + avg_temp + avg_temp_sq + log_pop,
+  data    = analysis_data,
+  vcov    = "hetero"
+)
+
+# Specification 2: State fixed effects only
+m2 <- feols(
+  log_demand ~ post_jul2012 + post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region,
+  data    = analysis_data,
+  cluster = ~region
+)
+
+# Specification 3: State + time fixed effects (preferred)
+m3 <- feols(
+  log_demand ~ post_jul2012 + post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data    = analysis_data,
+  cluster = ~region
+)
+```
+
+```{r regression-table}
+modelsummary(
+  list(
+    "OLS"              = m1,
+    "State FE"         = m2,
+    "State + Time FE"  = m3
+  ),
+  coef_rename = c(
+    "post_jul2012" = "Post July 2012",
+    "post_x_coal"  = "Post × Coal Share",
+    "avg_temp"     = "Temperature",
+    "avg_temp_sq"  = "Temperature Squared",
+    "log_pop"      = "Log(Population)"
+  ),
+  stars    = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  gof_map  = c("nobs", "r.squared", "adj.r.squared"),
+  title    = "Table 1: Conditional Association Between Coal Intensity and Electricity Demand",
+  notes    = "Dependent variable: log(avg quarterly electricity demand). Standard errors in
+              parentheses: heteroskedasticity-robust for OLS; clustered by state for
+              specifications (2) and (3). *** p<0.01, ** p<0.05, * p<0.1.",
+  output   = "kableExtra"
+) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE) |>
+  add_header_above(c(" " = 1, "Pooled" = 1, "Within-State" = 1, "Within-State & Time" = 1))
+```
+
+---
+
+# 5. Interpretation of Main Coefficients
+
+The preferred specification is Column (3), which includes both state and time fixed
+effects and thereforeidentifies associations from variation that remains after removing 
+persistent state-level differences and common time trends. Column (1) is a naive OLS 
+regression that does not control for any fixed effects. (2) controls for state fixed effects, 
+which absorb all time-invariant differences across states (e.g., industrial structure, 
+climate), but it does not control for common time shocks that affect all states 
+simultaneously. The inclusion of fixed effects in Column (3) means that the coefficients 
+should be interpreted as follows:
+
+**Post × Coal Share** ($\hat{\beta}_2$): This is the coefficient of primary interest.
+A negative value indicates that demand fell more in coal-intensive states after the policy, 
+relative to lower-coal states, conditional all controls and on fixed effects. Moving from 
+pooled OLS to the preferred specification with state and time fixed effects, the coefficient 
+on Post × Coal Share changes from 0.145 (SE = 0.138)to -0.06 (SE = 0.054), suggesting that 
+some of the raw association was driven by state-level heterogeneity and common time trends, 
+which the fixed effects absorb. The magnitude of coefficient is -0.06, meaning that a 
+one-unit increase in coal share is associated with approximately 6% lower electricity 
+demand in the post-policy period relative to the pre-policy period, holding state fixed 
+effects, time effects, temperature, and population constant. While showing that higher coal 
+share is associated with lower demand after the policy, the effect is not statistically 
+significant at conventional levels (p > 0.1). This association should not be interpreted as a 
+causal effect of carbon pricing on demand, due to potential confounding factors that vary 
+across states and over time.
+
+**Post July 2012** ($\hat{\beta}_1$): This is the average change in log demand across all 
+states after the policy introduction, conditional on all controls and fixed effects. A 
+negative value would suggest that demand declined on average across all states after the 
+policy, even after controlling for temperature and population. This coefficient does not 
+appear in the preferred specification with time fixed effects, because the time fixed effects at the quarter level 
+absorb all common time shocks, including any average post-policy shift. In the OLS and state 
+FE specifications, the coefficient is -0.147 (SE = 0.108) and -0.011 (SE = 0.020)
+respectively, but it is not statistically significant in either case.
+
+**Temperature**: Temperature enters the model as a quadratic — both the linear term 
+(−0.059, SE = 0.014) and the squared term (0.002, SE = 0.000) are included to capture the 
+U-shaped relationship identified in Figure 6.2 EDA. The two coefficients cannot be 
+interpreted independently, together they describe how demand changes across the temperature 
+range. The turning point, where demand reaches its minimum, is calculated as 
+$$-\frac{\hat{\gamma}_2}{2\hat{\gamma}_3} = -\frac{(-0.059)}{2 \times 0.002} \approx 14.75°C$$
+Below this point, colder temperatures are associated with higher demand driven by heating load and hotter 
+temperatures are associated with higher demand driven by cooling load. Both the linear and 
+squared terms are statistically significant. The linear term at the 5% level and the squared 
+term at the 1% level, confirming that the non-linear specification is appropriate and that 
+temperature is a meaningful predictor of electricity demand after controlling for state and 
+time fixed effects. As with all results in this analysis, this should be interpreted as a 
+conditional association rather than a causal effect.
+
+**Log(Population)**: This is the average change in log demand associated with a 1% increase
+in population, conditional on all other factors. A positive coefficient would suggest that
+larger states have higher demand, which is expected. The coefficient moves from 0.778 (SE =
+0.034) in pooled OLS to 0.180 (SE = 0.020) in the preferred specification, meaning that a 1% 
+increase in population is associated with approximately a 0.180% increase in electricity 
+demand, after controlling for state and time fixed effects, temperature, and the post-policy 
+period. This effect is not statistically significant in the preferred specification (p > 0.1), 
+which likely because population barely moves within a state over this short window, so the 
+fixed effects leave almost no within-state variation for population to explain.
+
+> **Note:** R squared is 0.999 in Column (3), mechanically high due to state and time fixed 
+effects absorbing most raw variation, as discussed. The within R squared is the more 
+meaningful fit measure here. The improvement from 0.917 (pooled OLS) to 0.999 (state + time 
+FE) reflects how much of the variation in demand is explained by persistent state differences 
+and common time trends rather than the regressors themselves.
+
+---
+
+# 6. Threats and Limitations
+
+Because this analysis is declared **descriptive**, the threats section focuses on
+limitations to the conditional correlations reported, rather than threats to causal
+identification.
+
+## 6.1 Omitted Confounders
+
+The most important limitation is that the `post × coal share` association may reflect
+factors other than the carbon price. For example:
+
+- **Energy efficiency programs**: Several states introduced energy efficiency initiatives 
+  (e.g., Greenhouse and Energy Minimum Standards Act 2012, lower-emission technologies) 
+  around the same period. If these were more prevalent in high-coal states, the observed 
+  demand association would be at least partly driven by efficiency rather than carbon 
+  pricing. This would bias the association downward.
+- **Industrial composition**: If coal-intensive states also had more energy-intensive
+  industries that declined over this period for unrelated reasons (e.g., manufacturing
+  contraction), the negative association could reflect structural deindustrialisation
+  rather than a price-driven demand response. Again, this would bias the association downward.
+
+State fixed effects absorb *time-invariant* state-level characteristics, but they do not
+absorb state-specific *time-varying* confounders. This is the primary limitation of the
+descriptive interpretation.
+
+## 6.2 Sample Selection
+
+The sample covers only five NEM states over five years. The results may not generalise beyond 
+the NEM (e.g., Western Australia which has major fuel extraction and mining sector). 
+Observations without population data were dropped during the cleaning process, as population 
+is a required control variable in the specification. The short time window (2010–2014) limits 
+the ability to separate policy effects from medium-run structural trends such as the ongoing 
+shift away from coal in Australia's electricity mix, especially when demand of electricity is 
+inelastic in the short run. A longer time series would allow for better understanding of how 
+demand evolved before and after the policy, and whether the observed association is part of 
+a longer-term trend rather than a discrete shift around the policy introduction.
+
+## 6.3 Measurement Limitations
+
+- **Coal share**: Coal sharechanges very little within each state over time. The mix of power plants in 
+  a state is largely fixed by existing infrastructure and changes slowly over decades. 
+  Because state fixed effects absorb everything that is constant within a state, the 
+  interaction term post × coal share is identified from only the small year-to-year movements 
+  in coal share within each state. This means the estimate is based on limited variation and 
+  should be interpreted cautiously.
+- **Quarterly aggregation**: Demand and price data in the NEM are originally recorded every 
+  30 minutes. They were aggregated to quarterly averages in this analysis due to population 
+  data only being available at the quarterly level. This means short-run fluctuations in 
+  demand are smoothed out, and the analysis captures longer-run average patterns rather than 
+  immediate responses to price or policy changes within a quarter.
+
+## 6.4 Small Number of Clusters
+
+Standard errors are clustered at the state level to account for correlation within states 
+over time. However, this approach works best when there are many clusters which ideally 30 or 
+more. With only five states, the clustered standard errors may not be fully reliable, and 
+statistical significance results should be interpreted with caution. This is an inherent 
+limitation of working with state-level data where the number of units is fixed by geography.
+
+---
+
+# Conclusion
+
+This analysis estimates the conditional association between coal intensity and electricity
+demand in Australian NEM states before and after the introduction of carbon pricing in
+July 2012. Using a panel with state and time fixed effects, the `Post × Coal Share`
+coefficient captures whether demand trajectories differed systematically across states
+with different carbon intensities in the post-policy period, after absorbing common
+time shocks and persistent state-level differences.
+
+The preferred specification finds a small negative association (−0.060, SE = 0.054)
+between coal intensity and post-policy demand, suggesting that higher coal-share states
+were associated with slightly lower demand after the policy introduction. However, this
+association is not statistically significant at conventional levels, and the absence of
+a large or significant demand response is itself a meaningful finding. Electricity demand
+is largely inelastic in the short run. Households and businesses do not rapidly change
+their consumption patterns in response to price signals, and the energy mix underlying
+electricity generation cannot shift immediately. The transition away from coal-intensive
+generation is a structural process that unfolds over decades, not quarters. Together,
+these factors suggest that detecting a strong differential demand response over a
+two-and-a-half year window would be unlikely even if the carbon price had meaningful
+long-run effects.
+
+The one variable that does show a statistically significant association is temperature,
+whose quadratic specification confirms a U-shaped relationship between temperature and
+demand, which areconsistent with dual heating and cooling load across seasons. This 
+highlights that short-run demand variation within states is driven primarily by seasonal 
+factors rather than policy-induced price changes over this window.
+
+The analysis is descriptive: the panel structure and absence of a clean control group
+preclude a credible causal claim. All coefficients should be interpreted as conditional
+associations rather than causal effects. The results nonetheless provide suggestive
+evidence on the correlates of electricity demand in the context of carbon pricing, and
+serve as a foundation for future work with longer time series, higher-frequency data,
+or alternative identification strategies that could better isolate the policy effect
+from structural trends in Australia's electricity market.

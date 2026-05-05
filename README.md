@@ -41,10 +41,18 @@ The analysis uses state-level panel data combining electricity demand, electrici
   - readr
   - languageserver
   - readxl
+  - fixest
+  - modelsummary
+  - kableExtra   
+
 
 To install required packages:
 
 install.packages(c("tidyverse", "lubridate", "janitor", "readxl", "readr", "languageserver"))
+
+Econometric analysis requires packages:
+
+install.packages(c("fixest", "modelsummary", "kabelExtra"))
 
 ## Data Sources
 
@@ -91,7 +99,10 @@ install.packages(c("tidyverse", "lubridate", "janitor", "readxl", "readr", "lang
        Result: data/clean/energy_mix.csv
   5. Rscript src/merge_data.R  
        Result: data/clean/merged_data.csv
-  6. Rscript econometrics_analysis.R (outside Data + GitHub assignment)
+  6. Rmarkdown EDA.md
+        Result: EDA.html
+  7. Rmarkdown primary_econometruics.md
+        Result: primary_econometrics.md
 
 ## Manual Steps
 
