@@ -507,7 +507,7 @@ ggplot(analysis_data, aes(x = avg_temp, y = avg_demand, color = region)) +
        y = "Average Monthly Demand (MWh)",
        caption = "Quadratic fit used as relationship appears non-linear") +
   theme_minimal()
-  ```
+```
 
 This figure explores the relationship between electricity demand and temperature. At the aggregated level, the overall trend suggests a positive relationship, where higher temperatures are associated with higher electricity demand.
 
