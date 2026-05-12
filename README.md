@@ -101,9 +101,9 @@ install.packages(c("fixest", "modelsummary", "kabelExtra"))
        Result: data/clean/merged_data.csv
   6. Rmarkdown EDA.md
         Result: EDA.html
-  7. Rmarkdown primary_econometruics.md
-        Result: primary_econometrics.md
-  8. Rmardown robust_check.md
+  7. Rmarkdown primary_econometruics.Rmd
+        Result: primary_econometrics.html
+  8. Rmardown robust_check.Rmd
         Result: robust_check.html
 
 ## Manual Steps
