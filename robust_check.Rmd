@@ -236,16 +236,17 @@ summary(r_placebo)
 ```{r robustness-table}
 modelsummary(
   list(
-    "Preferred"       = r_preferred,
-    "No Controls"     = r_nocontrols,
-    "Add Coal Level"  = r_addcontrols,
-    "Drop TAS"        = r_notas,
-    "2011-2013"       = r_narrow,
-    "Levels"          = r_levels,
-    "HC3 SE"          = r_hc3,
-    "Add Coal Level"  = r_coal_hc3,
-    "Placebo"         = r_placebo
+    "Preferred"         = r_preferred,
+    "No Controls"      = r_nocontrols,
+    "Add Coal Level"   = r_addcontrols,
+    "Drop TAS"         = r_notas,
+    "2011-2013"        = r_narrow,
+    "Levels"           = r_levels,
+    "HC3 SE"           = r_hc3,
+    "Coal + HC3"        = r_coal_hc3,
+    "Placebo"          = r_placebo
   ),
+  escape = FALSE,
   coef_map = c(
     "post_x_coal"    = "Post × Coal Share",
     "placebo_x_coal" = "Placebo × Coal Share",

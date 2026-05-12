@@ -897,16 +897,17 @@ summary(r_placebo)</code></pre>
 <h1>Robustness Table</h1>
 <pre class="r"><code>modelsummary(
   list(
-    &quot;Preferred&quot;       = r_preferred,
-    &quot;No Controls&quot;     = r_nocontrols,
-    &quot;Add Coal Level&quot;  = r_addcontrols,
-    &quot;Drop TAS&quot;        = r_notas,
-    &quot;2011-2013&quot;       = r_narrow,
-    &quot;Levels&quot;          = r_levels,
-    &quot;HC3 SE&quot;          = r_hc3,
-    &quot;Add Coal Level&quot;  = r_coal_hc3,
-    &quot;Placebo&quot;         = r_placebo
+    &quot;Preferred&quot;         = r_preferred,
+    &quot;No Controls&quot;      = r_nocontrols,
+    &quot;Add Coal Level&quot;   = r_addcontrols,
+    &quot;Drop TAS&quot;         = r_notas,
+    &quot;2011-2013&quot;        = r_narrow,
+    &quot;Levels&quot;           = r_levels,
+    &quot;HC3 SE&quot;           = r_hc3,
+    &quot;Coal + HC3&quot;        = r_coal_hc3,
+    &quot;Placebo&quot;          = r_placebo
   ),
+  escape = FALSE,
   coef_map = c(
     &quot;post_x_coal&quot;    = &quot;Post × Coal Share&quot;,
     &quot;placebo_x_coal&quot; = &quot;Placebo × Coal Share&quot;,
@@ -995,16 +996,16 @@ Add Coal Level
 Drop TAS
 </th>
 <th style="text-align:center;">
-&amp;nbsp;2011-2013
+ 2011-2013
 </th>
 <th style="text-align:center;">
 Levels
 </th>
 <th style="text-align:center;">
-&amp;nbsp;HC3 SE
+ HC3 SE
 </th>
 <th style="text-align:center;">
-Add Coal Level
+ Coal + HC3
 </th>
 <th style="text-align:center;">
 Placebo
@@ -1426,16 +1427,15 @@ R2
 <tr>
 <td style="padding: 0; " colspan="100%">
 <sup></sup> Dependent variable: log(avg quarterly electricity demand)
-unless noted.<br> Columns (1)–(3) and (6)–(8) use 2010–2014 full sample.
-Column (2) has no controls. <br> Column (3) include coal share as a
-control. Column (4) excludes <br> Tasmania. Column (5) restricts to
-2011–2013. Column (6) uses demand in levels (MWh). <br> Column (7) uses
-HC3 robust SEs instead of clustered. Column (8) use HC3 robust SEs for
-<br> Column (3) specification. Column (9) uses pre-policy data only<br>
-(2010–2012) with a placebo cutoff at July 2011. All specifications
-include<br> state and time fixed effects. Standard errors clustered by
-state except<br> Column (7) and Column (8). *** p&lt;0.01, ** p&lt;0.05,
-* p&lt;0.1.
+unless noted. Columns (1)–(3) and (6)–(8) use 2010–2014 full sample.
+Column (2) has no controls. Column (3) include coal share as a control.
+Column (4) excludes Tasmania. Column (5) restricts to 2011–2013. Column
+(6) uses demand in levels (MWh). Column (7) uses HC3 robust SEs instead
+of clustered. Column (8) use HC3 robust SEs for Column (3)
+specification. Column (9) uses pre-policy data only (2010–2012) with a
+placebo cutoff at July 2011. All specifications include state and time
+fixed effects. Standard errors clustered by state except Column (7) and
+Column (8). *** p&lt;0.01, ** p&lt;0.05, * p&lt;0.1.
 </td>
 </tr>
 </tfoot>
