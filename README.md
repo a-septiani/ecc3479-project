@@ -103,6 +103,8 @@ install.packages(c("fixest", "modelsummary", "kabelExtra"))
         Result: EDA.html
   7. Rmarkdown primary_econometruics.md
         Result: primary_econometrics.md
+  8. Rmardown robust_check.md
+        Result: robust_check.html
 
 ## Manual Steps
 

@@ -1,0 +1,473 @@
+---
+title: "Robustness Analysis: Carbon Pricing and Electricity Demand"
+author: "Adinda Septiani - 33917949"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(fixest)
+library(modelsummary)
+library(kableExtra)
+library(lubridate)
+```
+
+---
+
+# 1. Main Result and Declaration
+
+This analysis is **descriptive**. The primary analysis estimated the conditional
+association between coal intensity and electricity demand in Australian NEM states
+before and after the introduction of carbon pricing in July 2012. All results should
+be interpreted as conditional correlations, not causal effects.
+
+The main result from the preferred specification (state + time fixed effects) is:
+
+- **Post × Coal Share = −0.060 (SE = 0.054)**: States with higher coal share are
+  associated with approximately 6% lower electricity demand in the post-policy period
+  relative to the pre-policy period, after controlling for state fixed effects, time
+  fixed effects, temperature (quadratic), and population. This association is **not
+  statistically significant** at conventional levels (p > 0.1).
+
+- **Temperature** enters as a quadratic and is statistically significant, confirming
+  a U-shaped heating-cooling relationship with demand. This signals the short-term 
+  demand variation within states is associated with seasonal temperature changes rather 
+  than policy-related factors.
+
+The robustness checks below stress-test whether the sign, magnitude, and significance
+of the `Post × Coal Share` coefficient are sensitive to alternative control sets,
+samples, functional forms, and inference approaches.
+
+---
+
+# 2. Data
+
+```{r load-data}
+candidate_paths <- c("data/clean/merged_data.csv")
+data_path <- candidate_paths[file.exists(candidate_paths)][1]
+
+if (is.na(data_path)) {
+  stop("No dataset found. Expected data/clean/merged_data.csv")
+}
+
+analysis_data <- read_csv(data_path) |>
+  clean_names() |>
+  mutate(
+    post_jul2012  = if_else(year > 2012 | (year == 2012 & month >= 7), 1L, 0L),
+    log_demand    = log(avg_demand),
+    log_pop       = log(population),
+    avg_temp_sq   = avg_temp^2,
+    time_id       = paste(year, sprintf("%02d", month), sep = "-"),
+    post_x_coal   = post_jul2012 * coal_share
+  )
+```
+
+---
+
+# 3. Robustness Checks
+
+## 3.1 Alternative Control Sets
+
+Three specifications test whether the main result is sensitive to the set of
+controls included:
+
+- **No controls**: Only `post × coal share` and fixed effects — no temperature,
+  no population. Tests whether controls are driving or masking the association.
+- **Preferred**: The main specification with temperature (quadratic) and
+  log(population).
+- **Additional controls**: Adds `coal_share` as a standalone level term alongside
+  the interaction, to check whether the interaction coefficient is sensitive to
+  directly conditioning on the main effect of coal share.
+
+```{r control-sets}
+# No controls (interaction + FE only)
+r_nocontrols <- feols(
+  log_demand ~ post_x_coal | region + time_id,
+  data    = analysis_data,
+  cluster = ~region
+)
+summary (r_nocontrols)
+
+# Preferred specification
+r_preferred <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data    = analysis_data,
+  cluster = ~region
+)
+summary(r_preferred)
+
+# Additional coal_share level term
+r_addcontrols <- feols(
+  log_demand ~ post_x_coal + coal_share + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data    = analysis_data,
+  cluster = ~region
+)
+summary(r_addcontrols)
+```
+
+---
+
+## 3.2 Alternative Samples
+
+Two sample restrictions test whether the result is driven by a specific state or
+time window:
+
+- **Drop TAS**: Tasmania has a coal share of exactly 0 throughout the sample,
+  making it an extreme point in the coal share distribution. Dropping it checks
+  whether the interaction is identified primarily from TAS vs. the rest.
+- **Narrow window (2011–2013)**: Restricts to 1.5 years around the policy
+  introduction to reduce the influence of longer-run structural trends unrelated
+  to the carbon price.
+
+```{r alt-samples}
+# Drop Tasmania
+data_notas <- analysis_data |> filter(region != "TAS")
+
+r_notas <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data    = data_notas,
+  cluster = ~region
+)
+summary(r_notas)
+
+# Time window 2011-2013 only
+data_narrow <- analysis_data |>
+  filter(year >= 2011 & year <= 2013)
+
+r_narrow <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data    = data_narrow,
+  cluster = ~region
+)
+summary(r_narrow)
+```
+
+---
+
+## 3.3 Alternative Functional Form
+
+Tests whether the log transformation of the outcome is driving the result by
+running the preferred specification in **levels** (avg_demand, not logged):
+
+```{r alt-form}
+# Levels outcome instead of log
+r_levels <- feols(
+  avg_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data    = analysis_data,
+  cluster = ~region
+)
+summary(r_levels)
+```
+
+---
+
+## 3.4 Alternative Inference
+
+Tests whether the main result is sensitive to the choice of standard errors.
+With only 5 clusters, cluster-robust SEs may understate the true uncertainty.
+HC3 heteroskedasticity-robust SEs provide an alternative that does not rely
+on the small-cluster asymptotic approximation:
+
+```{r alt-inference}
+# HC3 robust SEs instead of clustered
+r_hc3 <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data = analysis_data,
+  vcov = "HC3"
+)
+summary(r_hc3)
+
+# Add coal share level term + HC3 robust SEs
+r_coal_hc3 <- feols(
+  log_demand ~ post_x_coal + coal_share+ avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data = analysis_data,
+  vcov = "HC3"
+)
+summary(r_coal_hc3)
+```
+
+---
+
+## 3.5 Placebo Time Cutoff 
+
+Since this is a descriptive analysis, a key concern is whether the conditional
+correlation is driven by a pre-existing trend rather than anything specific to
+the post-July 2012 period. A placebo test replaces the true policy cutoff
+(July 2012) with a fake cutoff one year earlier (July 2011), using only
+pre-policy data (2010–2012). If `placebo × coal share` is also negative and
+significant, it suggests the result reflects a pre-existing trend unrelated
+to the policy period:
+
+```{r placebo}
+# Pre-policy data only with fake July 2011 cutoff
+data_placebo <- analysis_data |>
+  filter(year <= 2012) |>
+  mutate(
+    placebo_post   = if_else(year > 2011 | (year == 2011 & month >= 7), 1L, 0L),
+    placebo_x_coal = placebo_post * coal_share,
+    time_id_p      = paste(year, sprintf("%02d", month), sep = "-")
+  )
+
+r_placebo <- feols(
+  log_demand ~ placebo_x_coal + avg_temp + avg_temp_sq + log_pop
+             | region + time_id_p,
+  data    = data_placebo,
+  cluster = ~region
+)
+summary(r_placebo)
+```
+
+---
+
+# Robustness Table
+
+```{r robustness-table}
+modelsummary(
+  list(
+    "Preferred"       = r_preferred,
+    "No Controls"     = r_nocontrols,
+    "Add Coal Level"  = r_addcontrols,
+    "Drop TAS"        = r_notas,
+    "2011-2013"       = r_narrow,
+    "Levels"          = r_levels,
+    "HC3 SE"          = r_hc3,
+    "Add Coal Level"  = r_coal_hc3,
+    "Placebo"         = r_placebo
+  ),
+  coef_map = c(
+    "post_x_coal"    = "Post × Coal Share",
+    "placebo_x_coal" = "Placebo × Coal Share",
+    "coal_share"     = "Coal Share (level)",
+    "avg_temp"       = "Temperature",
+    "avg_temp_sq"    = "Temperature²",
+    "log_pop"        = "Log(Population)"
+  ),
+  stars   = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  gof_map = c("nobs", "r.squared"),
+  title   = "Table 2: Robustness Checks — Post × Coal Share Coefficient",
+  notes   = "Dependent variable: log(avg quarterly electricity demand) unless noted.
+             Columns (1)–(3) and (6)–(8) use 2010–2014 full sample. Column (2) has no controls. 
+             Column (3) include coal share as a control. Column (4) excludes 
+             Tasmania. Column (5) restricts to 2011–2013. Column (6) uses demand in levels (MWh). 
+             Column (7) uses HC3 robust SEs instead of clustered. Column (8) use HC3 robust SEs for 
+             column (3) specification.Column (9) uses pre-policy data only
+             (2010–2012) with a placebo cutoff at July 2011. All specifications include
+             state and time fixed effects. Standard errors clustered by state except
+             Column (7). *** p<0.01, ** p<0.05, * p<0.1.",
+  output  = "kableExtra"
+) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE) |>
+  add_header_above(c(
+    " "             = 1,
+    "Main"          = 1,
+    "Alt. Controls" = 2,
+    "Alt. Sample"   = 2,
+    "Alt. Form"     = 1,
+    "Alt. SE"       = 2,
+    "Placebo"       = 1
+  ))
+```
+``` {r coefficient plot}
+library(ggplot2)
+
+# Manually create a dataframe of your robustness results
+coef_data <- data.frame(
+  spec = c(
+    "(1) Preferred",
+    "(2) No Controls",
+    "(3) Add Coal Level",
+    "(4) Drop TAS",
+    "(5) 2011-2013",
+    "(6) HC3 SE",
+    "(7) Add Coal Level + HC3",
+    "(8) Placebo"
+  ),
+  estimate = c(-0.060, -0.033, -0.098, -0.052, -0.085, -0.060, -0.098, -0.011),
+  se       = c(0.054,  0.039,  0.045,  0.030,  0.044,  0.038, 0.043, 0.025)
+) |>
+  mutate(
+    ci_low  = estimate - 1.96 * se,
+    ci_high = estimate + 1.96 * se,
+    # Keep order as listed above
+    spec = factor(spec, levels = rev(spec))
+  )
+
+ggplot(coef_data, aes(x = estimate, y = spec)) +
+  geom_vline(xintercept = -0.060, linetype = "dashed",
+             color = "grey50", linewidth = 0.5) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "red", linewidth = 0.5) +
+  geom_errorbarh(aes(xmin = ci_low, xmax = ci_high),
+                 height = 0.2, color = "steelblue") +
+  geom_point(color = "steelblue", size = 3) +
+  labs(
+    title = "Figure 1. Post × Coal Share Coefficient Across Specifications",
+    x     = expression(hat(beta)["Post × Coal Share"]),
+    y     = NULL,
+    caption = "Error bars show 95% confidence intervals. 
+    Dashed line marks the preferred specification estimate (−0.060). 
+    Red line marks zero.
+    Error bar crossing zero indicates insignificance at 10% level."
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    plot.margin = margin(10, 20, 10, 10)
+  ) +
+coord_cartesian(clip = "off")
+```
+
+
+---
+
+# 4. Interpretation of Robustness Checks
+
+## 4.1 Alternative control sets (Columns 1–3)
+
+**Did the result hold?** Report whether the `Post × Coal Share` coefficient
+stays negative and its significance changes across columns 1–3.
+
+The no-controls specification (Column 2) removes temperature and population resulting in 
+the coefficient changing to  -0.033 (SE = 0.039) and still insignificant. This suggests 
+that the controls are not inflating the negative association, but they are also not 
+masking a significant relationship. They rather help to isolate the association. The 
+additional controls specification (Column 3) adds the coal share level term increase the 
+coefficient magnitude to -0.098 (SE = 0.045) and makes it significant at the 10% level. 
+Before adding the coal share term, the model treats coal share as time-invariant and 
+absorbs it into the state fixed effects. But coal share actually does change slightly 
+within states over time. Because it's absorbed into the FE, the model cannot use those 
+small within-state changes to precisely estimate how coal share affects the post-policy 
+demand response. When we add coal share as its own variable, the model can use both the 
+within-state variation in coal share over time and the cross-state differences to 
+estimate the post-policy association more precisely, which is why it becomes significant.
+The coal share level term itself is significant at 1% level, indicating that states with 
+higher coal share have lower demand on average, which is expected given coal-intensive 
+states tend to be more populated. Therefore, the preferred specification's insignificance 
+is partly a consequence of near-collinearity between coal share and state fixed effects 
+rather than a true absence of association.
+
+## 4.2 Alternative samples (Columns 4–5)
+
+**Did the result hold?** Compare the coefficient in the drop-TAS and narrow
+window specifications to the preferred.
+
+Tasmania's coal share of exactly 0 makes it the anchor of the lower end of
+the coal share distribution. If dropping TAS substantially changes the
+coefficient, it means the interaction is being identified primarily from the
+contrast between TAS and the rest rather than from variation across all states.
+Dropping Tasmania does not substantially change the coefficient to -0.052 (SE = 0.030).
+The standard error decreases but the result remain insignificant, which suggests the 
+result is not being driven solely by the contrast between TAS and the other states.
+Additionally, the coefficient of log(population) increase to 1.783 from 0.180 in the 
+preferred specification. This suggests that including TAS, which has a small population, 
+may have been distorting the population coefficient, although it remians insignificant in 
+both specifications.
+
+The narrow window check addresses whether the association is driven by events
+in the early or late parts of the sample rather than the period immediately
+around the policy. Restricting to 2011–2013 gives a coefficient of -0.085 (SE = 0.044), 
+larger in magnitude in the narrow window and approaches significance at 10% level 
+(p = 0.13). The fact that the coefficient is slightly smaller in the full sample suggests 
+the longer window dilutes the association with noise from periods further from the policy.
+
+## 4.3 Alternative functional form (Column 6)
+
+**Did the result hold?** The levels specification uses MWh directly rather
+than log(MWh), so the coefficient is not directly comparable in magnitude.
+What matters is the **sign** and **significance**, if both are consistent
+with the preferred specification, the log transformation is not driving the
+result. In levels, the Post × Coal Share coefficient is -852.119 (SE = 461.668), 
+which is insignificant, consistent with the log specification. However the standard 
+error is enormous relative to the coefficient, and the temperature coefficients also 
+become very large and unstable. This suggests the levels specification is poorly behaved, 
+likely because the raw MWh values are heavily influenced by the scale differences across 
+states that the log transformation was designed to address. The log specification is 
+clearly more appropriate for this data.
+
+## 4.4 Alternative inference (Column 7-8)
+
+**Did the result hold?** Compare the SE on `Post × Coal Share` between
+the clustered preferred and the HC3 version.
+
+If the HC3 SE is smaller than the clustered SE, it means clustering was
+actually making inference more conservative than necessary, and the result
+might look stronger under HC3. If the HC3 SE is larger, clustering was
+understating the uncertainty even further than the small-cluster problem
+suggests. Under HC3 robust SEs, the Post × Coal Share coefficient is identical to the 
+preferred specification (-0.06). Meanwhile, the HC3 SE of 0.038 is smaller than the 
+clustered SE of 0.054. This means clustering was actually producing more conservative 
+standard errors than HC3. However, under HC3 the result is closer to significance 
+(p ≈ 0.116). This is noteworthy as it suggests the preferred specification with clustered 
+SEs is being conservative, and the result is somewhat more precise under the alternative 
+inference approach.
+
+To further probe the significance found in the Add Coal Level specification (Column 3), 
+the combined check applies HC3 robust standard errors to the same specification. Recall 
+that the HC3 SE is smaller than the clustered SE in this dataset (0.038 vs 0.054 in the 
+preferred spec), reflecting that between-state heterogeneity rather than within-state 
+serial correlation is the dominant feature of the error structure. When HC3 is applied 
+to the Add Coal Level specification, the already-significant result strengthens. The 
+coefficient remains at −0.098 but significance improves from the 10% level (clustered SE 
+= 0.045) to the 5% level (HC3 SE = 0.043). This confirms that the significance in the Add 
+Coal Level specification is not inflated by the clustered SE being too conservative, 
+if anything, the clustered SE was understating precision relative to HC3. The result 
+becomes more significant, not less, when the more appropriate small-sample SE correction 
+is applied.
+
+## 4.5 Placebo test (Column 9)
+
+**Did the result hold?** If the placebo coefficient (`Placebo × Coal Share`) is also 
+negative and of similar magnitude, it implies the negative association existed before 
+the policy was introduced. It means the main result is likely capturing a pre-existing 
+trend rather than anything specific to the carbon pricing period. If the placebo
+coefficient is close to zero or positive, it provides some reassurance that
+the negative association in the main result is at least specific to the post-July 2012 
+period. The placebo coefficient is -0.011 (SE = 0.025), which is close to zero and 
+insignificant. This support the credibility of the main finding as the negative association 
+does not appear before the policy, suggesting teh effect appear specific to the 
+post-policy period.
+
+---
+
+# 5. Overall Assessment
+
+Across eight robustness checks, the Post × Coal Share coefficient is consistently 
+negative, ranging from −0.033 to −0.098 across log specifications. The direction 
+never flips sign. Statistical significance emerges in two specifications: when coal share is 
+included as a standalone level term (Column 3, significant at 10%) and when this is combined 
+with HC3 robust standard errors (Column 8, significant at 5%). The coefficient magnitude of 
+−0.098 is identical across both specifications, confirming that the point estimate is driven 
+entirely by adding coal share as its own variable and the SE correction does not change what 
+the model estimates. However, the SE correction does strengthen the significance level, applying 
+HC3 reduces the SE slightly from 0.045 to 0.043, pushing significance from the 10% to the 5% 
+level. Together this means: the negative association of −0.098 comes from separating coal share 
+from the state fixed effects, and the HC3 correction confirms this estimate is precisely enough estimated 
+to clear the 5% significance threshold. The preferred specification's insignificance is therefore 
+a consequence of near-collinearity between coal share and state fixed effects rather than a 
+true absence of association. The placebo coefficient of −0.011 remains near zero and insignificant, 
+confirming the negative association is specific to the post-policy period. 
+
+The specifications that do not reach significance (no controls, drop TAS, narrow window, and HC3 on 
+the preferred spec) do not undermine the main finding but rather reflect the statistical fragility of 
+working with a small panel of five states and 100 observations. In each case the direction is preserved 
+and the coefficient remains economically meaningful in magnitude. The levels specification fails entirely 
+due to scale instability, confirming the log transformation is the appropriate functional form rather than 
+casting doubt on the association itself. Together, the surviving and failing patterns suggest the main 
+finding is credible in direction and economically meaningful in magnitude, but statistically sensitive to 
+sample size and specification choices. This sensitivity is inherent to the data, rather than a reflection 
+of a weak underlying association. The result should still be interpreted as descriptive and subject to the 
+limitations noted in the primary analysis.
