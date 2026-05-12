@@ -256,16 +256,16 @@ modelsummary(
   ),
   stars   = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
   gof_map = c("nobs", "r.squared"),
-  title   = "Table 2: Robustness Checks — Post × Coal Share Coefficient",
+  title   = "Table 1: Robustness Checks — Post × Coal Share Coefficient",
   notes   = "Dependent variable: log(avg quarterly electricity demand) unless noted.
              Columns (1)–(3) and (6)–(8) use 2010–2014 full sample. Column (2) has no controls. 
              Column (3) include coal share as a control. Column (4) excludes 
              Tasmania. Column (5) restricts to 2011–2013. Column (6) uses demand in levels (MWh). 
              Column (7) uses HC3 robust SEs instead of clustered. Column (8) use HC3 robust SEs for 
-             column (3) specification.Column (9) uses pre-policy data only
+             Column (3) specification. Column (9) uses pre-policy data only
              (2010–2012) with a placebo cutoff at July 2011. All specifications include
              state and time fixed effects. Standard errors clustered by state except
-             Column (7). *** p<0.01, ** p<0.05, * p<0.1.",
+             Column (7) and Column (8). *** p<0.01, ** p<0.05, * p<0.1.",
   output  = "kableExtra"
 ) |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),

@@ -917,16 +917,16 @@ summary(r_placebo)</code></pre>
   ),
   stars   = c(&quot;*&quot; = 0.1, &quot;**&quot; = 0.05, &quot;***&quot; = 0.01),
   gof_map = c(&quot;nobs&quot;, &quot;r.squared&quot;),
-  title   = &quot;Table 2: Robustness Checks — Post × Coal Share Coefficient&quot;,
+  title   = &quot;Table 1: Robustness Checks — Post × Coal Share Coefficient&quot;,
   notes   = &quot;Dependent variable: log(avg quarterly electricity demand) unless noted.
              Columns (1)–(3) and (6)–(8) use 2010–2014 full sample. Column (2) has no controls. 
              Column (3) include coal share as a control. Column (4) excludes 
              Tasmania. Column (5) restricts to 2011–2013. Column (6) uses demand in levels (MWh). 
              Column (7) uses HC3 robust SEs instead of clustered. Column (8) use HC3 robust SEs for 
-             column (3) specification.Column (9) uses pre-policy data only
+             Column (3) specification. Column (9) uses pre-policy data only
              (2010–2012) with a placebo cutoff at July 2011. All specifications include
              state and time fixed effects. Standard errors clustered by state except
-             Column (7). *** p&lt;0.01, ** p&lt;0.05, * p&lt;0.1.&quot;,
+             Column (7) and Column (8). *** p&lt;0.01, ** p&lt;0.05, * p&lt;0.1.&quot;,
   output  = &quot;kableExtra&quot;
 ) |&gt;
   kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;),
@@ -942,7 +942,7 @@ summary(r_placebo)</code></pre>
   ))</code></pre>
 <table style="NAborder-bottom: 0; width: auto !important; margin-left: auto; margin-right: auto; width: auto !important; margin-left: auto; margin-right: auto;" class="table table table-striped table-hover table-condensed">
 <caption>
-Table 2: Robustness Checks — Post × Coal Share Coefficient
+Table 1: Robustness Checks — Post × Coal Share Coefficient
 </caption>
 <thead>
 <tr>
@@ -1431,10 +1431,11 @@ Column (2) has no controls. <br> Column (3) include coal share as a
 control. Column (4) excludes <br> Tasmania. Column (5) restricts to
 2011–2013. Column (6) uses demand in levels (MWh). <br> Column (7) uses
 HC3 robust SEs instead of clustered. Column (8) use HC3 robust SEs for
-<br> column (3) specification.Column (9) uses pre-policy data only<br>
+<br> Column (3) specification. Column (9) uses pre-policy data only<br>
 (2010–2012) with a placebo cutoff at July 2011. All specifications
 include<br> state and time fixed effects. Standard errors clustered by
-state except<br> Column (7). *** p&lt;0.01, ** p&lt;0.05, * p&lt;0.1.
+state except<br> Column (7) and Column (8). *** p&lt;0.01, ** p&lt;0.05,
+* p&lt;0.1.
 </td>
 </tr>
 </tfoot>
