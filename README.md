@@ -105,6 +105,8 @@ install.packages(c("fixest", "modelsummary", "kabelExtra"))
         Result: primary_econometrics.html
   8. Rmardown robust_check.Rmd
         Result: robust_check.html
+  9. Rmarkdown final_report.Rmd
+        Result: final_report.html
 
 ## Manual Steps
 

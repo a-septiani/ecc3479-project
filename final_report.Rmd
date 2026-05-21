@@ -1,0 +1,729 @@
+---
+title: "Carbon Pricing and Electricity Demand: Did electricity demand respond more strongly to the Australian carbon pricing policy in states with more carbon-intensive electricity generation?"
+author: "Adinda Septiani - 33917949"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(fixest)
+library(modelsummary)
+library(kableExtra)
+library(lubridate)
+```
+
+```{r load-data, include=FALSE}
+analysis_data <- read_csv("data/clean/merged_data.csv") |>
+  clean_names() |>
+  mutate(
+    post_jul2012 = if_else(year > 2012 | (year == 2012 & month >= 7), 1L, 0L),
+    log_demand   = log(avg_demand),
+    log_pop      = log(population),
+    avg_temp_sq  = avg_temp^2,
+    time_id      = paste(year, sprintf("%02d", month), sep = "-"),
+    post_x_coal  = post_jul2012 * coal_share
+  )
+```
+
+---
+
+# 1. Introduction
+
+Internalizing carbon has been growing since Finland and Poland introduced the carbon tax in 1990. Australia followed 
+by introducing a carbon price of AUD 23 later in July 2012, making it one of the very few countries to have 
+implemented an explicit carbon pricing mechanism on its electricity sector. However, due to the inherent differences 
+among the Australian states, the electricity mix generation varies significantly, and uniform policies may lead to 
+varying reactions. States with a higher share of coal electricity generation tend to have higher carbon emissions 
+per MWh.
+
+According to this logic, states with high carbon intensity would face larger cost shocks for the electricity 
+customer. Related literature shows that customers bear the cost of the carbon pricing rather than the generator 
+(Nazifi et al., 2021). This raises the question: Did the introduction of carbon pricing have any effect on demand, 
+and did the demand response differ between states based on their carbon intensity? This project aims to determine 
+if electricity demand in more coal-intensive states was associated with a larger demand reduction following the 
+introduction of carbon pricing.
+
+Previous empirical evidence on actual demand responses at the state level during the 2012–2014 policy window 
+remains limited. Existing work focuses primarily on cost pass-through, electricity price, and generation-side 
+adjustments (Nazifi et al., 2021; Wong & Zhang, 2021; O’Gorman & Jotzo, 2014), rather than on heterogeneous demand 
+responses across states with different carbon intensities.
+
+This analysis is descriptive. The coefficients should be interpreted as conditional correlations, which are 
+associated with demand after absorbing fixed differences across states and common time trends, not as treatment 
+effects. Using a balanced state-quarter panel from 2010 to 2014 and a fixed effects regression with a post-policy 
+interaction on coal share, the preferred specification finds a small negative but statistically insignificant 
+association (−0.060, SE = 0.054) between coal intensity and post-policy demand. The direction is consistent across 
+all robustness checks, and significance emerges under alternative specifications that address a near-collinearity 
+problem between coal share and state fixed effects. Temperature enters as a statistically significant quadratic, 
+confirming a U-shaped heating-cooling relationship with demand. The overall finding suggests the carbon price was 
+not associated with a large differential demand response over this short window, consistent with the known short-run 
+inelasticity of electricity demand.
+
+---
+
+# 2. Data
+
+## 2.1 Data Source
+
+The dataset is constructed from four sources. Electricity demand and price data are drawn from the Australian Energy 
+Market Operator (AEMO), which publishes historical dispatch and settlement data for the NEM at 30-minute intervals. 
+Temperature data are sourced from the Australian Bureau of Meteorology (BOM), aggregated to state-level quarterly 
+averages. Population data are from the Australian Bureau of Statistics (ABS) quarterly population estimates. Coal 
+shares data are from the Department of Climate Change, Energy, the Environment, and Water (DCCEEW).
+
+## 2.2 Sample Construction
+
+The sample covers five NEM states:  NSW, QLD, SA, TAS, and VIC. Sample restrictions to the five NEM states are due 
+to the same 30-minute dispatch and settlement system, making their data directly comparable. Including Western 
+Australia and Northern Territory, which are structurally separate from the NEM with a different market mechanism 
+and settlement system, would introduce cross-market heterogeneity unrelated to the research question.
+
+States are observed quarterly from Q1 2010 to Q4 2014, yielding N = 100 state-quarter observations. The time window 
+2010-2014 is chosen because the carbon price was introduced in July 2012 and repealed in July 2014. The repeal 
+creates a natural upper bound and makes including post-repeal data would conflate the policy period with its removal. 
+The pre-policy window is set symmetrically: Q1 2010 gives 10 quarters before and 10 quarters after the policy, 
+supporting visual inspection of pre-policy trends and avoiding undue weight on either regime. The panel is 
+balanced: every state is observed in every period. Observations without population data were dropped during the 
+cleaning process, as population is a required control variable.
+
+```{r sample-construction, echo = FALSE}
+sample_construction <- data.frame(
+  Step = c(
+    "Raw 30-min AEMO dispatch data,<br>2010–2014",
+    "Aggregate to monthly state average",
+    "Merge with energy mix, 2010–2014",
+    "Merge with temperature data,<br>2010–2014",
+    "Merge with quarter population data",
+    "Analysis sample"
+  ),
+  Observation = c(
+    "438,240",
+    "305",
+    "300",
+    "300",
+    "100",
+    "100"
+  ),
+  Detail = c(
+    "",
+    "Aggregated, Drop None",
+    "Drop 5 (12 a.m. 2015 data)",
+    "Drop None",
+    "Drop 200 (non-quarter months)",
+    ""
+  )
+)
+
+kable(
+  sample_construction,
+  col.names = c("Step", "Observation", "Detail"),
+  align = c("l", "c", "c"),
+  caption = "Table 1. Sample Construction",
+  format = "html",
+  escape = FALSE
+) |>
+  kable_styling(
+    bootstrap_options = c("condensed"),
+    full_width = FALSE,
+    position = "left"
+  ) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(6, bold = TRUE) |>
+  row_spec(c(1,2,3,4,5,6),
+           extra_css = "border-top: none; border-bottom: none;") |>
+  row_spec(0, extra_css = "border-top: 2px solid black; border-bottom: 1px solid black;") |>
+  row_spec(6, extra_css = "border-bottom: 2px solid black;") |>
+  column_spec(1, width = "43%") |>
+  column_spec(2, width = "20%") |>
+  column_spec(3, width = "37%") |>
+  footnote(
+    general = "This table summarises the data construction process from raw 30-minute AEMO dispatch data to the final analysis sample. Observations are sequentially reduced due to aggregation, merging with auxiliary datasets (energy mix, temperature, and population), and alignment of data frequency. The final sample consists of 100 state–quarter observations used in the regression analysis.",
+    general_title = "Note:",
+    footnote_as_chunk = TRUE
+  )
+```
+
+## 2.3 Key Variables
+
+The outcome variable is average quarterly electricity demand (MWh), log-transformed to address right-skew and 
+multi-modal distribution. The key explanatory variable is the interaction of a post-July 2012 indicator with each 
+state's coal share in electricity generation. Coal share proxies for the carbon intensity of the state's generation 
+mix and the magnitude of the implicit cost shock from the carbon price. Controls include temperature (entered as a 
+quadratic following a U-shaped relationship) and log population. Temperature data is used as a control variable 
+because weather conditions influence the use of cooling and heating load. Meanwhile, population data is included as 
+electricity demand generally increases with population size.
+
+Price is excluded from the specification. As a likely mediator between carbon pricing and demand, the policy 
+raised generation costs which passed through to prices, which then reduced demand. Including price would absorb 
+part of the association of interest. Additionally, wholesale electricity prices are simultaneously determined with 
+demand, meaning the price coefficient would be endogenous and unreliable as a control.
+
+
+## 2.4 Summary Statistics
+``` {r summary stats 2, echo=FALSE}
+# Continuous variables summary
+summary_table <- analysis_data |>
+  summarise(
+    across(
+      c(avg_demand, coal_share, avg_temp, population),
+      list(
+        Mean = ~mean(., na.rm = TRUE),
+        SD   = ~sd(., na.rm = TRUE),
+        Min  = ~min(., na.rm = TRUE),
+        Max  = ~max(., na.rm = TRUE),
+        N    = ~sum(!is.na(.))
+      )
+    )
+  ) |>
+  pivot_longer(everything(),
+               names_to  = c("Variable", ".value"),
+               names_sep = "_(?=[^_]+$)") |>
+  mutate(Variable = case_when(
+    Variable == "avg_demand"  ~ "Demand (MWh)",
+    Variable == "coal_share"  ~ "Coal Share (0–1)",
+    Variable == "avg_temp"    ~ "Temperature (°C)",
+    Variable == "population"  ~ "Population (persons)",
+    TRUE ~ Variable
+  )) |>
+  mutate(across(c(Mean, SD, Min, Max), ~round(., 2)),
+         across(c(Mean, SD, Min, Max), ~formatC(., format = "f", big.mark = ",", digits = 2)))
+
+# Add dummy variable as share row
+dummy_row <- data.frame(
+  Variable = "Share post-July 2012",
+  Mean     = paste0(round(mean(analysis_data$post_jul2012) * 100, 1), "%"),
+  SD       = "—",
+  Min      = "0",
+  Max      = "1",
+  N        = sum(!is.na(analysis_data$post_jul2012))
+)
+
+# Bind together
+final_table <- bind_rows(summary_table, dummy_row)
+
+# Render
+kable(
+  final_table,
+  col.names = c("Variable", "Mean", "SD", "Min", "Max", "N"),
+  align     = c("l", "r", "r", "r", "r", "r"),
+  caption   = "Table 2. Summary Statistics",
+  format    = "html",
+  escape    = FALSE
+) |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE
+  ) |>
+  row_spec(0, bold = TRUE) |>
+  footnote(
+    general = "Demand is average quarterly electricity demand in megawatt-hours (MWh). Coal Share is the proportion of electricity generated from coal (0 = no coal, 1 = fully coal-powered). Temperature is the average quarterly temperature in degrees Celsius. Population is quarterly estimated resident population in persons. Share post-July 2012 reports the proportion of observations in the post-policy period.",
+    general_title = "Notes:",
+    footnote_as_chunk = TRUE
+  )
+```
+
+Demand ranges widely across states: from 1,024.5 MWh (TAS) to over 9,542.5 MWh (NSW). It reflects dramatic 
+differences in state size and industrial composition, which is supported by the difference in population size. 
+Coal share varies from 0 (TAS, fully hydro) to approximately 0.90 (NSW, VIC). Temperature ranges from approximately 
+8.9°C to 25.8°C across states and seasons, capturing both heating-season winters and cooling-season summers. The 
+sample is split roughly evenly between pre-policy (50 observations) and post-policy (50 observations) periods. 
+
+---
+
+# 3. Empirical Strategy
+
+## 3.1 Declaration
+
+This analysis is descriptive. It estimates the conditional association between coal intensity and electricity 
+demand following carbon pricing, using a balanced state-level panel. No claim is made that the estimated 
+relationships are causal. Because all five National Electricity Market (NEM) states were subject to the same policy 
+simultaneously, there is no untreated control group, and a causal identification strategy is not available. 
+
+## 3.2Specification
+
+The outcome variable is the log of average quarterly electricity demand. Taking logs reduces the influence of 
+right-skew visible in the raw distribution and allows coefficients to be interpreted as approximate percentage 
+changes, which more meaningful scale given the drastic baseline demand level (Figure A.1). The main equation 
+estimated is:
+
+$$
+\log(\text{demand}_{it}) = \alpha_i + \lambda_t
+  + \beta_1 \, (\text{post}_{t} \times \text{coalshare}_{i})
+  + \beta_2 \, \text{post}_{t}
+  + \gamma_1 \, \text{temp}_{it}
+  + \gamma_2 \, \text{temp}_{it}^2
+  + \gamma_3 \log(\text{pop}_{it})
+  + \varepsilon_{it}
+$$
+
+where $i$ indexes state and $t$ indexes quarter-year. $\alpha_i$ are state fixed effects, absorbing all 
+time-invariant state-level differences (e.g., industrial structure, climate zone). $\lambda_t$ are time fixed 
+effects, absorbing common shocks in each period (e.g., national business cycle, energy market conditions). 
+The key variable is $\text{post}_{t} \times\text{coalshare}_{i}$, which captures whether the post-policy demand 
+trajectory differed systematically across states with different coal intensities. Temperature enters as a 
+quadratic ($\text{temp}_{it}$ and $\text{temp}_{it}^2$) because the EDA revealed a U-shaped within-state 
+relationship between temperature and demand (Figure A.2), consistent with dual heating and cooling load. Population 
+is log-transformed due to right-skew and large-scale difference between states (Figure A.3). Three specifications 
+are estimated: pooled OLS (no fixed effects), state FE only, and state + time FE (preferred).
+
+## 3.3 Error Structure
+
+Standard errors are clustered at the state level to allow for arbitrary serial correlation within states over time. 
+If an unobserved demand shock affects a state in one quarter, it likely persists into adjacent quarters, and 
+ignoring this would leave the failed independence assumption unsolved. Clustering allows the variance-covariance 
+matrix to be fully unrestricted within each state across all time periods. A known limitation is that cluster-robust 
+inference requires many clusters to be reliable, ideally 30 or more. With G = 5 states, the estimator may understate 
+true standard errors. Significance results should be interpreted cautiously. HC3 robust standard errors are reported 
+as a robustness check.
+
+---
+
+# 4. Results
+
+The Post × Coal Share coefficient moves from 0.145 (pooled OLS) to −0.016 (state FE) to −0.060 (state + time FE). 
+The pooled positive result reflects a cross-state size confound; large coal-intensive states (NSW, VIC) have higher 
+demand regardless of the policy. Once state fixed effects absorb those persistent differences, the coefficient 
+flips negative and remains so in the specification.
+
+The preferred specification is −0.060 (SE = 0.054), meaning moving from a coal share of 0 to a coal share of 0.1 
+(e.g., from 0.7 to 0.8) is associated with approximately 0.6% lower electricity demand in the post-policy period 
+relative to the pre-policy period, holding state fixed effects, time effects, temperature, and population constant. 
+Over the full 0-to-1 range of coal share, this implies approximately 6% lower demand. This association is not 
+statistically significant at conventional levels (p > 0.1). As with all coefficients in this analysis, this should 
+be interpreted as a conditional association rather than a causal effect.
+
+Although the result is statistically insignificant in the preferred specification, the magnitude is economically 
+plausible. A 6% demand differential across the full coal share range is consistent with the known short-run 
+inelasticity of electricity demand, households and businesses do not rapidly change consumption patterns in 
+response to price signals, and the energy generation mix cannot shift immediately. The transition away from coal is 
+a structural process unfolding over decades, not quarters. Detecting a strong differential response over a 2.5-year 
+window would be unlikely even if the carbon price had meaningful long-run effects.
+
+Moreover, a study reveals a reversal in energy transmissions. VIC, which exports its wholesale electricity to TAS, 
+becomes the importer of wholesale energy from TAS during the policy. This shift results in a significant increase in 
+energy imports, ranging from approximately 802% to 1,170% more energy compared to what it exported before 
+(Wong & Zhang, 2021). This imported energy explains how states can keep their high electricity demand despite their 
+coal share remaining relatively unchanged after the implementation of carbon pricing.
+
+```{r regressions, echo=FALSE}
+m1 <- feols(
+  log_demand ~ post_x_coal + post_jul2012 + avg_temp + avg_temp_sq + log_pop,
+  data = analysis_data, vcov = "hetero"
+)
+
+m2 <- feols(
+  log_demand ~ post_x_coal + post_jul2012 +avg_temp + avg_temp_sq + log_pop | region,
+  data = analysis_data, cluster = ~region
+)
+
+m3 <- feols(
+  log_demand ~ post_x_coal + post_jul2012 + avg_temp + avg_temp_sq + log_pop | region + time_id,
+  data = analysis_data, cluster = ~region
+)
+```
+
+```{r main-table, echo=FALSE}
+modelsummary(
+  list(
+    "OLS"           = m1,
+    "State FE"      = m2,
+    "State+Time FE" = m3
+  ),
+  coef_map = c(
+    "post_x_coal"  = "Post × Coal Share",
+    "post_jul2012" = "Post July 2012",
+    "avg_temp"     = "Temperature",
+    "avg_temp_sq"  = "Temperature²",
+    "log_pop"      = "Log(Population)"
+  ),
+  stars   = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  gof_map = c("nobs", "r.squared", "adj.r.squared"),
+  title   = "Table 3. Main Result",
+  notes   = "Dependent variable: log(avg quarterly electricity demand). Standard errors in
+             parentheses: heteroskedasticity-robust for OLS; clustered by state for
+             specifications (2) and (3). Intercept and post_jul2012 indicator omitted
+             from display. The high R² is largely mechanical; state fixed effects absorb
+             substantial cross-state variation in demand levels.
+             *** p<0.01, ** p<0.05, * p<0.1.",
+  output  = "kableExtra"
+) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE) |>
+  add_header_above(c(" " = 1, "Pooled" = 1, "Within-State" = 1, "Within-State & Time" = 1))
+```
+
+Temperature enters as a quadratic, with a linear term of −0.059 (significant at 5%) and a squared term of 0.002 
+(significant at 1%). These confirm the U-shaped relationship identified in the EDA (Figure A.2). Demand reaches its 
+minimum at approximately 14.75°C, where colder temperatures drive heating load and warmer temperatures drive cooling 
+load. Both terms are statistically significant, supporting the non-linear specification. A 1% increase in population 
+is associated with a 0.180% increase in electricity demand (SE = 0.980), but the coefficient is insignificant, 
+consistent with minimal population variation within states over the short window, limiting the fixed effects 
+estimator’s ability to exploit. As with all results, this is a conditional association rather than a causal effect.
+
+---
+
+# 5. Robustness
+
+Across eight robustness checks, the Post × Coal coefficient is consistently negative, ranging from −0.033 to −0.098 
+across log specifications. The direction never flips sign. Statistical significance emerges in two specifications: 
+when coal share is included as a standalone level term (Column 3, significant at 10%) and when this is combined with 
+HC3 robust standard errors (Column 8, significant at 5%). The coefficient magnitude of −0.098 is identical across 
+both specifications, indicating that the change in significance is driven by model specification and inference 
+rather than changes in the estimated effect itself. 
+
+This pattern is informative. When coal share is included as a standalone regressor, it separates cross-state 
+variation in coal intensity from the interaction term. Without this, coal share is largely absorbed by state fixed 
+effects, reducing the precision of the interaction estimate due to limited within-state variation. As a result, the 
+baseline specification likely suffers from multicollinearity between coal share and the fixed effects, inflating 
+standard errors and obscuring statistical significance.
+
+Applying HC3 reduces the SE slightly from 0.045 to 0.043, pushing significance from the 10% to the 5% level. This 
+occurs because HC3 adjusts only for heteroskedasticity, which appears limited based on the residual diagnostics 
+(Figure A.4), while clustered standard errors may be inflated and unreliable due to the small number of clusters. 
+As a result, HC3 produces a more precise estimate in this setting, increasing the t-statistic without changing the 
+coefficient itself. Together, this suggests that the larger negative estimate of −0.098 arises from separating coal 
+share from the state fixed effects, which improves precision by reducing collinearity. Applying HC3 standard errors 
+further reduces the estimated uncertainty, bringing the result below the 5% significance threshold. However, this 
+reflects sensitivity to the choice of inference method rather than definitive evidence of a precisely estimated 
+effect. The preferred specification’s insignificance likely reflects limited precision arising from near-collinearity 
+between coal share and state fixed effects, rather than clear evidence of no association.
+
+```{r robustness-regressions, echo=FALSE}
+r_preferred   <- m3
+
+r_nocontrols  <- feols(
+  log_demand ~ post_x_coal | region + time_id,
+  data = analysis_data, cluster = ~region
+)
+
+r_addcontrols <- feols(
+  log_demand ~ post_x_coal + coal_share + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data = analysis_data, cluster = ~region
+)
+
+r_notas <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop | region + time_id,
+  data = analysis_data |> filter(region != "TAS"), cluster = ~region
+)
+
+r_narrow <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop | region + time_id,
+  data = analysis_data |> filter(year >= 2011 & year <= 2013), cluster = ~region
+)
+
+r_hc3 <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop | region + time_id,
+  data = analysis_data, vcov = "HC3"
+)
+
+r_coal_hc3 <- feols(
+  log_demand ~ post_x_coal + coal_share + avg_temp + avg_temp_sq + log_pop
+             | region + time_id,
+  data = analysis_data, vcov = "HC3"
+)
+
+data_placebo <- analysis_data |>
+  filter(year <= 2012) |>
+  mutate(
+    placebo_post   = if_else(year > 2011 | (year == 2011 & month >= 7), 1L, 0L),
+    placebo_x_coal = placebo_post * coal_share,
+    time_id_p      = paste(year, sprintf("%02d", month), sep = "-")
+  )
+
+r_placebo <- feols(
+  log_demand ~ placebo_x_coal + avg_temp + avg_temp_sq + log_pop | region + time_id_p,
+  data = data_placebo, cluster = ~region
+)
+```
+
+```{r robustness-table, echo=FALSE}
+modelsummary(
+  list(
+    "Preferred"  = r_preferred,
+    "No Ctrl"    = r_nocontrols,
+    "Coal Lvl"   = r_addcontrols,
+    "No TAS"     = r_notas,
+    "2011-2013"  = r_narrow,
+    "HC3"        = r_hc3,
+    "Coal+HC3"   = r_coal_hc3,
+    "Placebo"    = r_placebo
+  ),
+  escape = FALSE,
+  coef_map = c(
+    "post_x_coal"    = "Post × Coal Share",
+    "placebo_x_coal" = "Placebo × Coal Share",
+    "coal_share"     = "Coal Share (level)",
+    "avg_temp"       = "Temperature",
+    "avg_temp_sq"    = "Temperature²",
+    "log_pop"        = "Log(Population)"
+  ),
+  stars   = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  gof_map = c("nobs", "r.squared"),
+  title   = "Table 4. Robustness Checks",
+  notes   = "Dependent variable: log(avg quarterly electricity demand) unless noted.
+             Columns (1)–(3) and (6)–(8) use 2010–2014 full sample. Column (2) has no controls. 
+             Column (3) include coal share as a control. Column (4) excludes 
+             Tasmania. Column (5) restricts to 2011–2013. Column (6) uses demand in levels (MWh). 
+             Column (7) uses HC3 robust SEs instead of clustered. Column (8) use HC3 robust SEs for 
+             Column (3) specification. Column (9) uses pre-policy data only
+             (2010–2012) with a placebo cutoff at July 2011. All specifications include
+             state and time fixed effects. Standard errors clustered by state except
+             Column (7) and Column (8). *** p<0.01, ** p<0.05, * p<0.1.",
+  output  = "kableExtra"
+) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE) |>
+  add_header_above(c(
+    " "          = 1,
+    "Main"       = 1,
+    "Alt.Ctrl"   = 2,
+    "Alt.Sample" = 2,
+    "Alt.SE"     = 2,
+    "Placebo"    = 1
+  ))
+```
+
+```{r forest-plot, fig.height=5, fig.width=7, echo=FALSE}
+coef_data <- data.frame(
+  spec     = c("(1) Preferred", "(2) No Controls", "(3) Coal Level",
+               "(4) Drop TAS", "(5) 2011-2013", "(6) HC3",
+               "(7) Coal+HC3", "(8) Placebo"),
+  estimate = c(-0.060, -0.033, -0.098, -0.052, -0.085, -0.060, -0.098, -0.011),
+  se       = c(0.054,  0.039,  0.045,  0.030,  0.044,  0.038,  0.043,  0.025)
+) |>
+  mutate(
+    ci_low  = estimate - 1.96 * se,
+    ci_high = estimate + 1.96 * se,
+    spec    = factor(spec, levels = rev(spec))
+  )
+
+ggplot(coef_data, aes(x = estimate, y = spec)) +
+  geom_vline(xintercept = -0.060, linetype = "dashed",
+             color = "black", linewidth = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "red", linewidth = 0.5) +
+  geom_errorbarh(aes(xmin = ci_low, xmax = ci_high),
+                 height = 0.2, color = "steelblue") +
+  geom_point(aes(color = spec == "(1) Preferred"), size = 3) +
+  scale_color_manual(values = c("TRUE" = "darkblue", "FALSE" = "steelblue"),
+                     guide = "none") +
+  labs(
+    title   = "Figure 1. Post × Coal Share Coefficient Across Specifications",
+    x       = expression(hat(beta)["Post × Coal Share"]),
+    y       = NULL,
+    caption = "Error bars show 95% confidence intervals. 
+    Dashed line marks the preferred specification estimate (−0.060). 
+    Red line marks zero.
+    Error bar crossing zero indicates insignificance at 10% level."
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    plot.margin = margin(10, 20, 10, 10)
+  ) +
+coord_cartesian(clip = "off")
+```
+
+---
+
+# 6 Discussion and Limitations
+
+This analysis finds a small, negative, and directionally robust conditional association between coal intensity and 
+electricity demand following the introduction of Australian carbon pricing in July 2012. The preferred specification 
+yields a coefficient of −0.060 (SE = 0.054), implying that a 0.1 increase in coal share is associated with 
+approximately 0.6% lower electricity demand in the post-policy period relative to the pre-policy period. The result 
+is not statistically significant in the preferred specification, but becomes significant at the 5% level in 
+alternative specifications where coal share is included as a standalone regressor, which improves precision by 
+reducing collinearity with state fixed effects.
+
+This analysis cannot conclude that carbon pricing caused the demand reduction. Because all five NEM states were 
+subject to the policy simultaneously, there is no untreated control group. The coefficients are conditional 
+correlations, not treatment effects. The absence of a large demand response is itself a meaningful finding, 
+consistent with the short-run inelasticity of electricity demand and the structural constraints on energy mix 
+adjustment.
+
+The main remaining threat to interpretation is the presence of time-varying omitted confounders. While state fixed 
+effects absorb persistent cross-state differences, they cannot account for state-specific changes over time that are 
+correlated with coal intensity. Two mechanisms are particularly plausible. First, several states introduced energy 
+efficiency programs around the policy period; if these were more prevalent in coal-intensive states, part of the 
+observed decline in electricity demand may reflect efficiency improvements rather than a behavioural response to 
+carbon pricing. Second, coal-intensive states had a higher concentration of energy-intensive industries, which 
+declined over this period due to broader structural changes unrelated to the policy. Both mechanisms would likely 
+bias the estimated relationship downward, making the effect appear more negative than it truly is. 
+
+A further limitation arises from interstate electricity trade, as electricity demand is measured at the state level 
+while generation and consumption are interconnected across regions. High-coal states may have reduced local 
+generation and increased imports following the carbon price, implying that observed demand changes may partly 
+reflect generation substitution across states rather than true consumption responses. 
+
+In addition, measurement constraints affect the analysis: coal share exhibits limited within-state variation over 
+the sample period, reducing the precision of the interaction estimate by limiting identifying variation, and the use 
+of quarterly aggregation smooths short-run demand responses. Finally, inference is constrained by the small number 
+of clusters (G = 5), as cluster-robust standard errors are known to be unreliable in such settings. Although HC3 
+robust standard errors are reported as a robustness check, results remain sensitive to inference assumptions and 
+should be interpreted with caution.
+
+Future research could address these limitations by employing higher-frequency data (e.g., monthly or weekly) to 
+better capture short-run demand responses and seasonal patterns, extending the time horizon to include post-policy 
+or post-repeal periods for a clearer before–during–after comparison, and adopting a quasi-experimental design. In 
+particular, incorporating a comparison market such as Western Australia, with appropriate controls for differences 
+in market structure, could strengthen causal identification.
+
+---
+
+## 7. Conclusion
+
+Using a balanced state-quarter panel from 2010 to 2014 with state and time fixed effects, this analysis estimates 
+the conditional association between coal intensity and electricity demand following Australia’s carbon price. The 
+preferred specification finds a small negative but statistically insignificant association. The direction is 
+consistent across all eight robustness checks and becomes statistically significant at the 5% level when the 
+near-collinearity between coal share and state fixed effects is reduced, improving the precision of the estimate. 
+Temperature shows a statistically significant U-shaped relationship with demand across all specifications. The 
+overall evidence is consistent with the known short-run inelasticity of electricity demand; no large differential 
+demand response is observed over the 2.5-year policy window, which is economically plausible given that energy 
+consumption patterns and generation mix adjust slowly. The results provide suggestive rather than conclusive 
+evidence, and further work with longer time series, higher-frequency data, or a quasi-experimental design would be 
+needed to draw stronger conclusions.
+
+---
+
+# References List
+
+Australian Bureau of Statistics. (2025). *National, state and territory population*. https://www.abs.gov.au/statistics/people/population/national-state-and-territory-population/latest-release 
+
+Australian Energy Market Operator. (n.d.). *Aggregated price and demand data*. https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/data-nem/aggregated-data
+
+Bureau of Meteorology. (n.d.). *Climate Data Online*. Australian Government. https://www.bom.gov.au/climate/data/
+
+Department of Climate Change, Energy, the Environment and Water. (2025). *Australian energy update 2025*. Australian Government. https://www.energy.gov.au/publications/australian-energy-update-2025
+
+Nazifi, F., Trück, S., & Zhu, L. (2021). Carbon pass-through rates on spot electricity prices in Australia. *Energy Economics*, *96*, 105178. https://doi.org/10.1016/j.eneco.2021.105178
+
+O’Gorman, M., & Jotzo, F. (2014). Impact of the carbon price on Australia’s electricity demand, supply and emissions. *SSRN Electronic Journal*. https://doi.org/10.2139/ssrn.2731384 
+
+Wong, J. B., & Zhang, Q. (2021). Impact of carbon tax on electricity prices and behaviour. *Finance Research Letters*, *44*, 102098. https://doi.org/10.1016/j.frl.2021.102098
+
+---
+
+# Appendix A
+
+## A.1 Electricity Demand by States Over Time
+
+```{r demand-trend}
+demand_monthly <- analysis_data |>
+  mutate(year_month = make_date(year, month, 1))
+
+demand_yearly <- demand_monthly |>
+  group_by(region, year) |>
+  summarise(avg_demand_year = mean(avg_demand, na.rm = TRUE), .groups = "drop") |>
+  mutate(year_month = make_date(year, 7, 1))  
+
+ggplot(demand_monthly, aes(x = year_month, y = avg_demand, color = region, group = region)) +
+  geom_line(alpha = 0.7) +  
+  geom_line(
+    data = demand_yearly,
+    aes(x = year_month, y = avg_demand_year, color = region, group = region),
+    linetype = "dashed",
+    linewidth = 1.1
+  ) +  
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(demand_monthly$avg_demand, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Figure A.1 Electricity Demand by Region Over Time",
+    subtitle = "Solid = original series, Dashed = 1-year trend",
+    x = "Year",
+    y = "Average Monthly Demand",
+    color = "Region",
+    caption = "Solid lines represent monthly demand, while dashed lines show smoothed yearly trends. 
+    The vertical line indicates the introduction of carbon pricing in July 2012."
+  ) +
+  theme_minimal()
+```
+
+## A.2.	Electricity Demand and Temperature Relationship
+
+``` {r demand-temperature-quadratic}
+ggplot(analysis_data, aes(x = avg_temp, y = avg_demand, color = region)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", formula = y ~ x + I(x^2), se = FALSE) +
+  geom_smooth(
+    data = analysis_data,
+    aes(x = avg_temp, y = avg_demand, linetype = "Average relationship"),
+    inherit.aes = FALSE,
+    method = "lm", formula = y ~ x + I(x^2),
+    se = FALSE, color = "black", linewidth = 1.2
+  ) +
+  labs(title = "Figure A.2. Electricity Demand and Temperature relationship",
+       x = "Average Monthly Temperature (°C)",
+       y = "Average Monthly Demand (MWh)",
+       caption = "Each point represents average monthly observations by state. 
+       Colored lines show region-specific fitted relationships, while the black line represents 
+       the overall average relationship.") +
+  theme_minimal()
+```
+
+## A.3.	Population by States Over Time
+
+```{r population-trend}
+ggplot(
+  analysis_data |> mutate(year_month = make_date(year, month, 1)),
+  aes(x = year_month, y = population, color = region, group = region)
+) +
+  geom_line() +
+  geom_vline(xintercept = as.Date("2012-07-01"), linetype = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = as.Date("2012-07-01"),
+    y = max(analysis_data$population, na.rm = TRUE),
+    label = "Carbon Pricing",
+    color = "red",
+    hjust = -0.1,
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Figure A.3. Population by Region Over Time",
+    x = "Year",
+    y = "Population",
+    caption = "Lines represent average population levels by state, with the vertical line indicating 
+    the introduction of carbon pricing in July 2012."
+  ) +
+  theme_minimal()
+```
+
+## A.4.	Residual vs Fitted Value
+
+```{r residuals-fitted, echo=FALSE}
+m3 <- feols(
+  log_demand ~ post_x_coal + avg_temp + avg_temp_sq + log_pop | region + time_id,
+  data = analysis_data, cluster = ~region
+)
+
+m_resid <- resid(m3)
+m_fitted <- fitted(m3)
+ggplot(data.frame(resid = m_resid, fitted = m_fitted), aes(x = fitted, y = resid)) +
+  geom_point(color = "steelblue", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title   = "Figure A.4.Residuals vs Fitted Values",
+    x       = "Fitted Values",
+    y       = "Residuals",
+    caption = "Residuals are scattered around zero without a clear systematic pattern, suggesting 
+    no strong evidence of model misspecification or severe heteroskedasticity."
+  ) +
+  theme_minimal()
+```
