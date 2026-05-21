@@ -28,6 +28,16 @@ The analysis uses state-level panel data combining electricity demand, electrici
   - coal_share_by_region: The time series trend of percentange of coal shares
   - analysis_metrics_by_region: the combination of all variable trend
 
+- docs/  
+  Contains final report PDF document.
+
+- slides/  
+  Contains final presentation PDF document.
+
+- final_paper_files/figure-latex
+  Contains figures produced in final report R Markdown.
+
+
 - README.md  
   Project documentation
 
